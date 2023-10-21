@@ -8,52 +8,92 @@ v3 V3(float x, float y, float z)
     return (v3){x, y, z};
 }
 
-v3 v3_add(v3 a, v3 b)
+v3 operator+(v3 a, v3 b)
 {
-    return (v3){a.x + b.x, a.y + b.y, a.z + b.z};
+    return {a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
-v3 v3_sub(v3 a, v3 b)
+v3 operator-(v3 a, v3 b)
 {
-    return (v3){a.x - b.x, a.y - b.y, a.z - b.z};
+    return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
 
-v3 v3_scale(v3 a, float b)
+v3 operator*(v3 a, float b)
 {
-    return (v3){a.x * b, a.y * b, a.z * b};
+    return {a.x * b, a.y * b, a.z * b};
 }
 
-float v3_dot(v3 a, v3 b)
+v3 operator*(float b, v3 a)
+{
+	return a * b;
+}
+
+v3 operator*(v3 a, v3 b)
+{
+	return {a.x * b.x, a.y * b.y, a.z * b.z};
+}
+
+v3 operator/(v3 a, float b)
+{
+    return a * (1.f / b);
+}
+
+v3 &operator+=(v3 &a, v3 b)
+{
+	return a = a + b;
+}
+
+v3 &operator-=(v3 &a, v3 b)
+{
+	return a = a - b;
+}
+
+v3 &operator*=(v3 &a, v3 b)
+{
+	return a = a * b;
+}
+
+v3 &operator*=(v3 &a, float b)
+{
+	return a = a * b;
+}
+
+v3 &operator/=(v3 &a, float b)
+{
+	return a = a / b;
+}
+
+float dot(v3 a, v3 b)
 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-float v3_length(v3 a)
+float length(v3 a)
 {
-    return sqrtf(v3_dot(a, a));
+    return sqrtf(dot(a, a));
 }
 
-v3 v3_lerp(v3 a, v3 b, float t)
+v3 lerp(v3 a, v3 b, float t)
 {
-	return (v3){
+	return {
 		a.x * (1 - t) + b.x * t,
 		a.y * (1 - t) + b.y * t,
 		a.z * (1 - t) + b.z * t
 	};
 }
 
-v3 v3_noz(v3 a)
+v3 noz(v3 a)
 {
-    float len = v3_length(a);
+    float len = length(a);
 
     if (len <= 0.00001f)
         return (v3){};
-    return v3_scale(a, 1.f / len);
+	return a / len;
 }
 
-v3 v3_cross(v3 a, v3 b)
+v3 cross(v3 a, v3 b)
 {
-    return (v3){
+    return {
         a.y * b.z - a.z * b.y,
         a.z * b.x - a.x * b.z,
         a.x * b.y - a.y * b.x
@@ -65,32 +105,42 @@ v2 V2(float x, float y)
     return (v2){x, y};
 }
 
-v2 v2_add(v2 a, v2 b)
+v2 operator+(v2 a, v2 b)
 {
-    return (v2){a.x + b.x, a.y + b.y};
+    return {a.x + b.x, a.y + b.y};
 }
 
-v2 v2_sub(v2 a, v2 b)
+v2 operator-(v2 a, v2 b)
 {
-    return (v2){a.x - b.x, a.y - b.y};
+    return {a.x - b.x, a.y - b.y};
 }
 
-v2 v2_scale(v2 a, float b)
+v2 operator*(v2 a, float b)
 {
-    return (v2){a.x * b, a.y * b};
+    return {a.x * b, a.y * b};
 }
 
-float v2_dot(v2 a, v2 b)
+v2 operator*(float b, v2 a)
+{
+	return a * b;
+}
+
+v2 operator/(v2 a, float b)
+{
+    return a * (1.f / b);
+}
+
+float dot(v2 a, v2 b)
 {
 	return a.x * b.x + a.y * b.y;
 }
 
-float v2_length(v2 a)
+float length(v2 a)
 {
-	return sqrtf(v2_dot(a, a));
+	return sqrtf(dot(a, a));
 }
 
-v2 v2_noz(v2 a)
+v2 noz(v2 a)
 {
 	float len = v2_length(a);
 	if (len <= 0.00001f)
@@ -98,8 +148,7 @@ v2 v2_noz(v2 a)
 	return v2_scale(a, 1.f / len);
 }
 
-
-v3 m3x3_mul_vec(m3x3 m, v3 v)
+v3 operator*(m3x3 m, v3 v)
 {
 	v3 res;
 
@@ -112,7 +161,8 @@ v3 m3x3_mul_vec(m3x3 m, v3 v)
 	return res;
 }
 
-m3x3 m3x3_mul(m3x3 a, m3x3 b)
+
+m3x3 operator*(m3x3 a, m3x3 b)
 {
     m3x3 res;
 
@@ -128,7 +178,7 @@ m3x3 m3x3_mul(m3x3 a, m3x3 b)
 	return res;
 }
 
-m3x3 m3x3_transpose(m3x3 m)
+m3x3 transpose(m3x3 m)
 {
     m3x3 res;
 
@@ -180,10 +230,10 @@ m3x3 y_rotation(float a)
 	return m;
 }
 
-v3 v3_rotate(v3 v, v3 rot)
+v3 rotate(v3 v, v3 rot)
 {
-	v = m3x3_mul_vec(x_rotation(rot.x), v);
-	v = m3x3_mul_vec(y_rotation(rot.y), v);
-	v = m3x3_mul_vec(z_rotation(rot.z), v);
+	v = x_rotation(rot.x) * v;
+	v = y_rotation(rot.y) * v;
+	v = z_rotation(rot.z) * v;
 	return v;
 }
