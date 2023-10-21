@@ -1,4 +1,30 @@
+#ifndef MMATH_H
+#define MMATH_H
+
 #include <math.h>
+
+typedef union 
+{
+    struct {float x, y, z;};
+    struct {float r, g, b;};
+    struct {float u, v, w;};
+	float e[3];
+} v3;
+
+typedef struct
+{
+    float x, y;
+} v2;
+
+typedef struct 
+{
+	float e[3][3];
+} m3x3;
+
+
+#ifndef internal
+#define internal static
+#endif
 
 internal float lerp(float a, float b, float t)
 {
@@ -239,3 +265,5 @@ internal v3 rotate(v3 v, v3 rot)
 	v = z_rotation(rot.z) * v;
 	return v;
 }
+
+#endif

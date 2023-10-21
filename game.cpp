@@ -1,11 +1,12 @@
 #include "game.h"
 #include "cow.h"
+#include "math.h"
 
 v3 project_to_screen(Game *game, v3 p)
 {
 	p -= game->camera_p;
 
-	p *= game->camera_inv_rotation_mat;
+	p = game->camera_inv_rotation_mat * p;
 
     v3 res;
 	
@@ -25,7 +26,6 @@ v3 project_to_screen(Game *game, v3 p)
 
 void render_game(Game *game)
 {
-#pragma omp parallel for
     for (int y = 0; y < game->height; y++)
     {
         for (int x = 0; x < game->width; x++)
@@ -33,9 +33,9 @@ void render_game(Game *game)
             game->zbuffer[y * game->width + x] = game->far_clip_plane;
             game->pixels[y * game->width + x] = 0x87ceeb00;
         }
-}
+    }
+
 	int max = 0;
-#pragma omp parallel for
 	for (int i = 0; i < game->triangle_count; i++)
 	{
 		Triangle *t = &game->triangles[i];
@@ -189,12 +189,9 @@ void draw_cube(Game *game, v3 c, v3 rotation, float radius, v3 color)
         draw_triangle(game, triangles[i][0], triangles[i][1], triangles[i][2], color);
 }
 
-#define CUBES_WIDTH 10
-#define CUBES_HEIGHT 10
 
-float cubes_height[CUBES_WIDTH][CUBES_HEIGHT];
 
-int game_update_and_render(Game *game)
+extern "C" void game_update_and_render(Game *game)
 {
 	struct timespec time_start, time_end;
 	clock_gettime(CLOCK_MONOTONIC, &time_start);
@@ -224,9 +221,7 @@ int game_update_and_render(Game *game)
 		for (int i = 0; i < CUBES_WIDTH; i++)
 		{
 			for (int j = 0; j < CUBES_HEIGHT; j++)
-			{
-				cubes_height[i][j] = (float)rand() / RAND_MAX;
-			}
+				game->cubes_height[i][j] = (float)rand() / RAND_MAX;
 		}
 		game->is_initialized = 1;
     }
@@ -242,11 +237,6 @@ int game_update_and_render(Game *game)
 		game->camera_y = m * V3(0, 1, 0);
 	}
 
-    static float a = 0;
-    a += 0.01f;
-
-
-
     v3 rotation = {};
 
 #if 1
@@ -254,13 +244,14 @@ int game_update_and_render(Game *game)
 	{
 		for (int x = 0; x < CUBES_WIDTH; x++)
 		{
-			v3 p = V3(x * 0.4, cubes_height[z][x] * 0.3, -z * 0.4) + cubes_offset;
-			v3 color = lerp(V3(0.2, 0.8, 0.3), V3(0.1, 0.9, 0.7), cubes_height[z][x]);
+			v3 p = V3(x * 0.4, game->cubes_height[z][x] * 0.3, -z * 0.4) + cubes_offset;
+			v3 color = lerp(V3(0.2, 0.8, 0.3), V3(0.1, 0.9, 0.7), game->cubes_height[z][x]);
     		draw_cube(game, p, rotation, 0.2, color);
 		}
 	}
 #endif
 
+    float a = game->time;
 	rotation = V3(a, a, a);
 	for (int i = 0; i < ntris; i++)
 	{
@@ -277,7 +268,7 @@ int game_update_and_render(Game *game)
 		v1 *= 0.25f;
 		v2 *= 0.25f;
 
-		draw_triangle(game, v0, v1, v2, V3(1, 1, 1));
+		draw_triangle(game, v0, v1, v2, V3(0.5, 1, 1));
 	}
 
 
@@ -285,5 +276,5 @@ int game_update_and_render(Game *game)
 
 	clock_gettime(CLOCK_MONOTONIC, &time_end);
 	game->last_frame_time = (time_end.tv_sec - time_start.tv_sec) * 1000.0 + (time_end.tv_nsec - time_start.tv_nsec) / 1000000.0;
-    return 0;
+    game->time += DT;
 }
