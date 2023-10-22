@@ -23,6 +23,7 @@ v3 project_to_screen(Game *game, v3 p)
     res.x = -(game->near_clip_plane * p.x) / p.z;
     res.y = -(game->near_clip_plane * p.y) / p.z;
 
+
     res.x = 2 * res.x / (game->right - game->left) - (game->right + game->left) / (game->right - game->left);
 	res.y = 2 * res.y / (game->top - game->bottom) - (game->top + game->bottom) / (game->top - game->bottom);
 
@@ -54,8 +55,6 @@ void render_game(Game *game)
     	v3 p1 = project_to_screen(game, t->p1);
     	v3 p2 = project_to_screen(game, t->p2);
 
-		//if (p0.z < game->near_clip_plane || p1.z < game->near_clip_plane || p2.z < game->near_clip_plane)
-		//	continue;
 
     	v2 box_min = {fmin(p0.x, fmin(p1.x, p2.x)), fmin(p0.y, fmin(p1.y, p2.y))};
     	v2 box_max = {fmax(p0.x, fmax(p1.x, p2.x)), fmax(p0.y, fmax(p1.y, p2.y))};
@@ -95,13 +94,9 @@ void render_game(Game *game)
  				   v3 p = V3(x + 0.5f, y + 0.5f, 0) - p0;
 
  				   float alpha = p.x * v.y * det + p.y * (-v.x) * det;
-
-				   if (alpha < 0 || alpha > 1)
-					   continue ;
-
  				   float beta = p.x * (-u.y) * det + p.y * u.x * det;
 
-				   if (beta < 0 || beta > 1 || alpha + beta > 1)
+				   if (alpha < 0 || beta < 0 || alpha + beta > 1)
 					   continue ;
 
 				   b.u = alpha;
@@ -111,7 +106,7 @@ void render_game(Game *game)
     	        {
 					float z = b.w * p0.z + b.u * p1.z + b.v * p2.z;
 
-					assert(z >= game->near_clip_plane - 0.001f);
+	//				assert(z >= game->near_clip_plane - 0.001f);
 					if (z < game->zbuffer[y * game->width + x])
 					{
 						game->zbuffer[y * game->width + x] = z;
@@ -120,13 +115,19 @@ void render_game(Game *game)
 						v3 p = b.w * t->p0 + b.u * t->p1 + b.v * t->p2;
 
 						v3 c = t->color;
-	//					float light = fmax(0, v3_dot(v3_noz(v3_sub(light_p, p)), t->normal));
-
+#if 0
+						float light = fmax(0, dot(noz(V3(5, 5, -5) - p), normal));
+#else
 						float light = fmax(0, dot(noz(game->camera_p - p), normal));
+#endif
 
 						//light = 1;
 						 c = t->color * light;
 
+						 //c = (normal + V3(1, 1, 1)) * 0.5f;
+
+#if 1
+#endif
     	            	uint32_t color32 = ((uint32_t)(c.r * 255 + 0.5f) << 24) |
     	            	        ((uint32_t)(c.g * 255 + 0.5f) << 16) |
     	            	        ((uint32_t)(c.b * 255 + 0.5f) << 8);
@@ -187,6 +188,8 @@ void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color)
 	
 	triangles[0] = (Triangle){cp0, cp1, cp2};
 
+	normal = noz(cross(cp1 - cp0, cp2 - cp0));
+
 	int triangle_count = 1;
 	// construct the 5 planes
 	struct {
@@ -194,8 +197,8 @@ void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color)
 		float d;
 	} planes[] = { // normal direction matters
 		{{0, 0, -1}, -game->near_clip_plane}, // front
-		//{cross(V3(game->left, game->bottom, -game->near_clip_plane),
-		//	   V3(game->left, game->top, -game->near_clip_plane)), 0}, // left
+	//	{cross(V3(game->left, game->bottom, -game->near_clip_plane),
+	//		   V3(game->left, game->top, -game->near_clip_plane)), 0}, // left
 //
 		//{cross(V3(game->right, game->top, game->near_clip_plane),
 		//	   V3(game->right, game->bottom, game->near_clip_plane)), 0}, // right
@@ -216,20 +219,6 @@ void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color)
 		{
 			Triangle *t = &triangles[j];
 
-			// clip triangle against plane
-			float t0 = ray_intersect_plane(planes[i].normal, planes[i].d, t->p0, t->p1 - t->p0);	
-			v3 x0 = t->p0 + t0 * (t->p1 - t->p0);
-
-			float t1 = ray_intersect_plane(planes[i].normal, planes[i].d, t->p0, t->p2 - t->p0);	
-			v3 x1 = t->p0 + t1 * (t->p2 - t->p0);
-
-			float t2 = ray_intersect_plane(planes[i].normal, planes[i].d, t->p1, t->p2 - t->p1);	
-			v3 x2 = t->p1 + t2 * (t->p2 - t->p1);
-
-			if (t0 > 1) t0 = -1;
-			if (t1 > 1) t1 = -1;
-			if (t2 > 1) t2 = -1;
-
 			// 1 -> are you on the clipped side
 			int d0 = dot(t->p0, planes[i].normal) <= -planes[i].d;
 			int d1 = dot(t->p1, planes[i].normal) <= -planes[i].d;
@@ -246,18 +235,45 @@ void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color)
 
 			if (d0 + d1 + d2 == 3)
 				continue ;
-			if ((t0 > 0) + (t1 > 0) + (t2 > 0) <= 1 || d0 + d1 + d2 == 0) // TODO: check this 
+			if (d0 + d1 + d2 == 0)
 			{
 				new_triangles[new_triangle_count++] = triangles[j];
 				continue ;
 			}
 
+			// clip triangle against plane
+			float t0 = ray_intersect_plane(planes[i].normal, planes[i].d, t->p0, t->p1 - t->p0);	
+			v3 x0 = t->p0 + t0 * (t->p1 - t->p0);
+			
+		//	if (fabsf(t->p1.z - t->p0.z) < 0.01f ||
+		//		fabsf(t->p2.z - t->p0.z) < 0.01f ||
+		//		fabsf(t->p2.z - t->p1.z) < 0.01f)
+		//		printf("bad %d\n", game->frame);
+		//	x0 = t->p0 + (-(game->near_clip_plane + t->p0.z) / (t->p1.z - t->p0.z)) * (t->p1 - t->p0);
+
+			float t1 = ray_intersect_plane(planes[i].normal, planes[i].d, t->p0, t->p2 - t->p0);	
+			v3 x1 = t->p0 + t1 * (t->p2 - t->p0);
+
+			float t2 = ray_intersect_plane(planes[i].normal, planes[i].d, t->p1, t->p2 - t->p1);	
+			v3 x2 = t->p1 + t2 * (t->p2 - t->p1);
+
+			if (t0 > 1) t0 = -1;
+			if (t1 > 1) t1 = -1;
+			if (t2 > 1) t2 = -1;
+
+
+
+			if ((t0 < 0) + (t1 < 0) + (t2 < 0) > 1)
+				printf("bad %d\n", game->frame);
 
 			if (t0 < 0)
 				swap(x0, x2), swap(t0, t2);
 			if (t1 < 0)
 				swap(x1, x2), swap(t1, t2);
 
+
+			if (t0 < 0 || t1 < 0)
+				printf("bad %d\n", game->frame);
 
 			if (d0 + d1 + d2 == 1)
 			{
@@ -276,6 +292,12 @@ void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color)
 				if (dot(noz(p1 - x0), noz(x1 - x0)) < dot(noz(p0 - x0), noz(x1 - x0)))
 					swap(p0, p1);
 
+				x0.z = -game->near_clip_plane;
+				x1.z = -game->near_clip_plane;
+
+			//	x0 -= V3(0, 0, 0.01f);
+			//	x1 -= V3(0, 0, 0.01f);
+				
 				Triangle t0 = {x0, x1, p1};
 				Triangle t1 = {x0, p1, p0};
 
@@ -283,12 +305,9 @@ void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color)
 					swap(t0.p1, t0.p2);
 				if (dot(normal, noz(cross(t1.p1 - t1.p0, t1.p2 - t1.p0))) < 0)
 					swap(t1.p1, t1.p2);
+
 				new_triangles[new_triangle_count++] = t0;
 				new_triangles[new_triangle_count++] = t1;
-
-
-
-				//printf("yo2 %d\n", game->frame);
 			}
 			else if (d0 + d1 + d2 == 2)
 			{
@@ -372,7 +391,7 @@ extern "C" void game_update_and_render(Game *game)
 
 	if (!game->is_initialized)
     {
-		game->near_clip_plane = 1;
+		game->near_clip_plane = .01;
 		game->far_clip_plane = 1000;
 		game->fov = 60;
 
@@ -380,7 +399,7 @@ extern "C" void game_update_and_render(Game *game)
 		game->triangles = (Triangle *)malloc(sizeof(*game->triangles) * 128000);
 
         game->camera_p = (v3){0, 1, 8};
-        game->camera_p = (v3){};
+       // game->camera_p = (v3){};
 
         game->film_width = tan((game->fov*0.5f) * DEG_TO_RAD) * 2 * game->near_clip_plane;
         game->film_height = game->film_width * ((float)game->height / game->width);
@@ -401,6 +420,16 @@ extern "C" void game_update_and_render(Game *game)
 	game->triangle_count = 0;
 
 	{
+		game->near_clip_plane = .08;
+		game->far_clip_plane = 1000;
+		game->fov = 60;
+        game->film_width = tan((game->fov*0.5f) * DEG_TO_RAD) * 2 * game->near_clip_plane;
+        game->film_height = game->film_width * ((float)game->height / game->width);
+		game->top = game->film_height * 0.5f;
+		game->right = game->film_width * 0.5f;
+		game->bottom = -game->top;
+		game->left = -game->right;
+
 		game->camera_inv_rotation_mat = x_rotation(-game->camera_rotation.x) *
 						(y_rotation(-game->camera_rotation.y) * z_rotation(-game->camera_rotation.z));
 		game->camera_rotation_mat = z_rotation(game->camera_rotation.z) *
@@ -422,13 +451,13 @@ extern "C" void game_update_and_render(Game *game)
 	{
 		for (int x = 0; x < CUBES_WIDTH; x++)
 		{
-			v3 p = V3(x * 0.4, game->cubes_height[z][x] * 0.3, -z * 0.4) + cubes_offset;
+			v3 p = V3(x * 0.42, game->cubes_height[z][x] * 0.3, -z * 0.42) + cubes_offset;
 			v3 color = lerp(V3(0.2, 0.8, 0.3), V3(0.1, 0.9, 0.7), game->cubes_height[z][x]);
     		draw_cube(game, p, rotation, 0.2, color);
 		}
 	}
 
-#if 0
+#if 1
     float a = game->time;
 	rotation = V3(a, a, a);
 	for (int i = 0; i < ntris; i++)

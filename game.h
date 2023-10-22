@@ -56,6 +56,7 @@ typedef struct
 	float far_clip_plane;
 	float film_width, film_height;
 	float top, bottom, left, right;
+	float focal_length;
 	float *zbuffer;
 	int is_initialized;
 

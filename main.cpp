@@ -19,8 +19,8 @@ int main(void)
 {
     Game *game = (Game *)calloc(1, sizeof(*game));
 	
-    game->width = 512;
-    game->height = 512;
+    game->width = 1280;
+    game->height = 720;
 
     
 	int relative_mouse_mode = 0;
