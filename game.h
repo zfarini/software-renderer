@@ -20,6 +20,9 @@
 #define DEG_TO_RAD (PI / 180.0)
 #define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(*(arr)))
 
+#define MAX_SAMPLES_PER_PIXEL (32)
+#define SAMPLES_PER_PIXEL (4)
+
 #include "math.h"
 
 typedef struct 
@@ -36,6 +39,7 @@ typedef struct
     int width;
     int height;
 	uint32_t *pixels;
+	uint32_t *pixels_aa;
 
 	int is_mouse_down;
 	int prev_mouse_x;
@@ -65,6 +69,8 @@ typedef struct
 	int frame;
 
 	int go_in, go_back;
+
+	v2 samples_offset[MAX_SAMPLES_PER_PIXEL];
 } Game;
 
 
