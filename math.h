@@ -46,6 +46,11 @@ internal v3 operator-(v3 a, v3 b)
     return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
 
+internal v3 operator-(v3 a)
+{
+	return {-a.x, -a.y, -a.z};
+}
+
 internal v3 operator*(v3 a, float b)
 {
     return {a.x * b, a.y * b, a.z * b};

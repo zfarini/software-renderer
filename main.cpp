@@ -108,6 +108,19 @@ int main(void)
 						relative_mouse_mode = !relative_mouse_mode;
 						SDL_SetRelativeMouseMode((SDL_bool)!SDL_GetRelativeMouseMode());
 					}
+					else if (keycode == SDLK_i)
+					{
+						game->go_in = 1;
+					}
+					else if (keycode == SDLK_o)
+						game->go_back = 1;
+				}
+				else
+				{
+					if (keycode == SDLK_i)
+						game->go_in = 0;
+					else if (keycode == SDLK_o)
+						game->go_back = 0;
 				}
 
 			}
