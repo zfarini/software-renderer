@@ -27,29 +27,17 @@
 
 #include "math.h"
 
-typedef struct 
-{
-	v3 p0, p1, p2;
-
-	v3 screen_p0, screen_p1, screen_p2;
-
-	int min_x, min_y, max_x, max_y;
-
-	v3 color;
-
-} Triangle;
-
 
 #define THREADS 1
 
-#define MAX_TRIANGLE_COUNT (10000000)
-#define TILES_PER_WIDTH 4
-#define TILES_PER_HEIGHT 4
+#define MAX_TRIANGLE_COUNT (6000000)
+#define TILES_PER_WIDTH 16
+#define TILES_PER_HEIGHT 16
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
 
 #define CORE_COUNT (4)
-#define CUBES_WIDTH 1000
-#define CUBES_HEIGHT 1000
+#define CUBES_WIDTH 100
+#define CUBES_HEIGHT 100
 
 #define MAX_TRIANGLE_COUNT_PER_TILE (MAX_TRIANGLE_COUNT)
 
@@ -62,13 +50,37 @@ typedef THREAD_WORK_FUNC(ThreadWorkCallbackFn);
 
 struct alignas(max_align_t) ThreadWork
 {
-	uint8_t data[256];
+	uint8_t data[65536];
 	
 
 	ThreadWorkCallbackFn *callback;
 
+	int index;
 	volatile _Atomic int finished;
 };
+
+struct Texture
+{
+	int width;
+	int height;
+	int pitch;
+	uint32_t *pixels;
+};
+
+typedef struct 
+{
+	v3 p0, p1, p2;
+
+	v3 screen_p0, screen_p1, screen_p2;
+
+	v2 uv0, uv1, uv2;
+
+	int min_x, min_y, max_x, max_y;
+
+	Texture *texture;
+	v3 color;
+
+} Triangle;
 
 
 typedef struct
@@ -101,7 +113,7 @@ typedef struct
 	float *zbuffer;
 	int is_initialized;
 
-    float cubes_height[CUBES_WIDTH][CUBES_HEIGHT];
+    float cubes_height[CUBES_HEIGHT][CUBES_WIDTH];
     float time;
 
 	float total_time;
@@ -122,6 +134,11 @@ typedef struct
 	volatile _Atomic int work_count;
 	ThreadWork *thread_work; // this should loop
 	volatile _Atomic int next_thread_index;
+
+	Texture grass_tex;
+	Texture grass_top_tex;
+
+	ThreadWork *curr_thread_work;
 } Game;
 
 

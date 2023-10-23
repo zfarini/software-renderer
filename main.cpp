@@ -6,11 +6,11 @@
 #include <sys/stat.h> 
 #include <pthread.h>
 
-#define CODE_RELOADING 0
+#define CODE_RELOADING 1
 
-#if (!CODE_RELOADING)
-#include "game.cpp"
-#endif
+//#if (!CODE_RELOADING)
+//#include "game.cpp"
+//#endif
 
 time_t get_last_write_time(const char *filename)
 {
@@ -164,8 +164,7 @@ int main(void)
 
 
 		}
-        if (&game_update_and_render)
-		    game_update_and_render(game);
+		game_update_and_render(game);
 		
 		{
 			char s[128];
