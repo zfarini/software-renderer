@@ -31,6 +31,13 @@ internal float lerp(float a, float b, float t)
 	return (1 - t) * a + t * b;
 }
 
+internal float clamp(float a, float b, float t)
+{
+	if (t < a) t = a;
+	else if (t > b) t = b;
+	return t;
+}
+
 internal v3 V3(float x, float y, float z)
 {
     return (v3){x, y, z};

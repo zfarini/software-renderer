@@ -4,6 +4,7 @@
 #include "dlfnc.h"
 #include <time.h>
 #include <sys/stat.h> 
+#include <pthread.h>
 
 time_t get_last_write_time(const char *filename)
 {
@@ -22,7 +23,7 @@ int main(void)
     game->width = 512;
     game->height = 512;
 
-    
+
 	int relative_mouse_mode = 0;
 
     SDL_Init(SDL_INIT_VIDEO);
@@ -37,10 +38,22 @@ int main(void)
     void *dll = dlopen(dll_name, RTLD_LAZY);
     GameUpdateAndRenderFn *game_update_and_render = (GameUpdateAndRenderFn *)
             dlsym(dll, "game_update_and_render");
+	GameThreadWorkFn *game_thread_work = (GameThreadWorkFn *)
+			dlsym(dll, "game_thread_work");
 
     assert(dll);
     assert(game_update_and_render);
 
+
+#if THREADS
+	game->next_work_index = TILES_COUNT;
+	 for (int i = 1; i < CORE_COUNT; i++)
+	 {
+		 pthread_t thread;
+		 pthread_create(&thread, 0, game_thread_work, game);
+	}
+#endif
+    
     SDL_SetWindowMinimumSize(window, game->width, game->height);
     //TODO: should these takes window or back_buffer width/height
     SDL_RenderSetLogicalSize(renderer, game->width, game->height);
@@ -147,7 +160,7 @@ int main(void)
 		
 		{
 			char s[128];
-			snprintf(s, sizeof(s), "%.2fms", game->last_frame_time);
+			snprintf(s, sizeof(s), "%.2fms %.2fms", game->last_frame_time, game->total_time / (game->frame + 1));
 			SDL_SetWindowTitle(window, s);
 		}
 

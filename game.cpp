@@ -14,6 +14,19 @@ float min(float a, float b)
 	return a < b ? a : b;
 }
 
+void get_tile_clip_bounds(Game *game, int index, v2 &min_clip, v2 &max_clip)
+{
+	int min_x = ((index) % TILES_PER_WIDTH) * (game->width / TILES_PER_WIDTH);
+	int min_y = ((index) / TILES_PER_HEIGHT) * (game->height / TILES_PER_HEIGHT);
+
+	int max_x = min_x + game->width / TILES_PER_WIDTH;
+	int max_y = min_y + game->height / TILES_PER_HEIGHT;
+
+	min_clip = V2(min_x, min_y);
+	max_clip = V2(max_x, max_y);
+}
+
+
 v3 world_to_camera(Game *game, v3 p)
 {
 	return game->camera_inv_rotation_mat * (p - game->camera_p);
@@ -49,14 +62,20 @@ float edge(v3 a, v3 b, v3 c)
 { return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x); }
 
 
-
-void render_game(Game *game)
+void render_tile(Game *game, int tile_index)
 {
-#pragma omp parallel for
-    for (int y = 0; y < game->height; y++)
-    {
+	v2 clip_min, clip_max;
 
-        for (int x = 0; x < game->width; x++)
+	get_tile_clip_bounds(game, tile_index, clip_min, clip_max);
+
+	int clip_min_x = clip_min.x;
+	int clip_min_y = clip_min.y;
+	int clip_max_x = clip_max.x;
+	int clip_max_y = clip_max.y;
+
+	for (int y = clip_min_y; y < clip_max_y; y++)
+    {
+        for (int x = clip_min_x; x < clip_max_x; x++)
         {
 			for (int i = 0; i < SAMPLES_PER_PIXEL; i++)
 			{
@@ -67,32 +86,14 @@ void render_game(Game *game)
         }
     }
 
-#pragma omp parallel for
-	for (int i = 0; i < game->triangle_count; i++)
+	for (int j = 0; j < game->triangles_per_tile_count[tile_index]; j++)
 	{
-		Triangle *t = &game->triangles[i];
-
-    	v3 p0 = project_to_screen(game, t->p0);
-    	v3 p1 = project_to_screen(game, t->p1);
-    	v3 p2 = project_to_screen(game, t->p2);
+		Triangle *t = &game->triangles[game->triangles_per_tile[tile_index][j]];
 
 
-    	v2 box_min = {fmin(p0.x, fmin(p1.x, p2.x)), fmin(p0.y, fmin(p1.y, p2.y))};
-    	v2 box_max = {fmax(p0.x, fmax(p1.x, p2.x)), fmax(p0.y, fmax(p1.y, p2.y))};
-
-		// TODO: bounds
-    	int min_x = floorf(box_min.x);
-    	int max_x = floorf(box_max.x) + 1;
-    	int min_y = floorf(box_min.y);
-    	int max_y = floorf(box_max.y) + 1;
-
-    	if (min_x < 0) min_x = 0;
-    	if (min_y < 0) min_y = 0;
-    	if (max_x > game->width) max_x = game->width;
-    	if (max_y > game->height) max_y = game->height;
-
-		if (min_x >= max_x || min_y >= max_y)
-			continue;
+		v3 p0 = t->screen_p0;
+		v3 p1 = t->screen_p1;
+		v3 p2 = t->screen_p2;
 
  		v3 u = p1 - p0;
  		v3 v = p2 - p0;
@@ -108,9 +109,19 @@ void render_game(Game *game)
 		v3 normal = noz(cross(t->p1 - t->p0, t->p2 - t->p0));
 
 
+
+		int min_x = t->min_x;
+		int min_y = t->min_y;
+		int max_x = t->max_x;
+		int max_y = t->max_y;
+
+		if (min_x < clip_min_x) min_x = clip_min_x;
+		if (min_y < clip_min_y) min_y = clip_min_y;
+		if (max_x > clip_max_x) max_x = clip_max_x;
+		if (max_y > clip_max_y) max_y = clip_max_y;
+
     	for (int y = min_y; y < max_y; y++)
     	{
-
     	    for (int x = min_x; x < max_x; x++)
     	    {
 
@@ -141,10 +152,9 @@ void render_game(Game *game)
 						b *= one_over_area;
 #endif
 					}
-	    	        {
+		    	    {
 						float z = b.w * p0.z + b.u * p1.z + b.v * p2.z;
-	
-				//	assert(z >= game->near_clip_plane - 0.001f);
+		
 						int buffer_index = y * game->width * SAMPLES_PER_PIXEL + x * SAMPLES_PER_PIXEL + sample;
 						if (z < game->zbuffer[buffer_index])
 						{
@@ -153,37 +163,34 @@ void render_game(Game *game)
 							// todo: prespective-correct interpolation?
 							//
 							v3 p = b.w * t->p0 + b.u * t->p1 + b.v * t->p2;
-	
+		
 							v3 c = t->color;
 
 							float light = max(0, dot(noz(game->camera_p - p), normal));
-	
+		
 						 	c = t->color * light;
-	
-							 //c = (normal + V3(1, 1, 1)) * 0.5f;
-	
-	#if 0
-							 z *= 0.1f;
-							 if (z > 1)
-								 z = 1;
+		
+							//c = (normal + V3(1, 1, 1)) * 0.5f;
+#if 0
+							z *= 0.1f;
+							if (z > 1)
+								z = 1;
 							 c = V3(z, z, z);
-	#endif
-	    	   				 uint32_t color32 = ((uint32_t)(c.r * 255 + 0.5f) << 24) |
+#endif
+	    	   				uint32_t color32 = ((uint32_t)(c.r * 255 + 0.5f) << 24) |
 	    	   				         	       ((uint32_t)(c.g * 255 + 0.5f) << 16) |
 	    	   				         	       ((uint32_t)(c.b * 255 + 0.5f) << 8);
-	    	   				 game->pixels_aa[buffer_index] = color32;
+	    	   				game->pixels_aa[buffer_index] = color32;
 						}
 
     	        	}
 				}
     	    }
-    	}
+		}
 	}
-
-#pragma omp parallel for
-	for (int y = 0; y < game->height; y++)
+	for (int y = clip_min_y; y < clip_max_y; y++)
 	{
-		for (int x = 0; x < game->width; x++)
+		for (int x = clip_min_x; x < clip_max_x; x++)
 		{
 			uint32_t *b = game->pixels_aa + y * game->width * SAMPLES_PER_PIXEL + x * SAMPLES_PER_PIXEL;
 
@@ -203,7 +210,40 @@ void render_game(Game *game)
 	    	   				 ((uint32_t)(color.b * 255 + 0.5f) << 8);
 		}
 	}
-	//printf("max: %d %f\n", max, (float)max / (game->width * game->height) * 100); 
+}
+
+void render_game(Game *game)
+{
+//#pragma omp parallel for
+    
+
+//#pragma omp parallel for
+	//for (int i = 0; i < TILES_COUNT; i++)
+	game->next_work_index = 0;
+	while (1)
+	{
+		int tile_index = game->next_work_index++;
+
+		if (tile_index >= TILES_COUNT)
+			break ;
+
+		render_tile(game, tile_index);
+	}
+	while (1)
+	{
+		int finished = 1;
+		for (int i = 1; i < CORE_COUNT; i++)
+		{
+			if (!game->finished_work[i])
+			{
+				finished = 0;
+				break ;
+			}
+		}
+		if (finished)
+			break ;
+		usleep(1000);
+	}
 }
 
 void swap(float &a, float &b)
@@ -231,6 +271,7 @@ float ray_intersect_plane(v3 plane_normal, float d, v3 ray_origin, v3 ray_dir)
 	return (-d - dot(plane_normal, ray_origin)) / denom;
 }
 
+// TODO: make this multithreaded
 void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color)
 {
 	v3 normal = noz(cross(tp1 - tp0, tp2 - tp0));
@@ -343,15 +384,58 @@ void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color)
 					triangles[triangle_count++] = (Triangle){x0, x1, p};
 			}
 	}
-	for (int j = 0; j < triangle_count; j++)
+	for (int i = 0; i < triangle_count; i++)
 	{
-		Triangle *t = &game->triangles[game->triangle_count++];
+		assert(game->triangle_count < MAX_TRIANGLE_COUNT);
 
-		*t = triangles[j];
+		Triangle *t = &game->triangles[game->triangle_count];
+
+		*t = triangles[i];
 		t->p0 = camera_to_world(game, t->p0);
 		t->p1 = camera_to_world(game, t->p1);
 		t->p2 = camera_to_world(game, t->p2);
 		t->color = color;
+
+		v3 p0 = project_to_screen(game, t->p0);
+    	v3 p1 = project_to_screen(game, t->p1);
+    	v3 p2 = project_to_screen(game, t->p2);
+
+    	v2 tmin = {fmin(p0.x, fmin(p1.x, p2.x)), fmin(p0.y, fmin(p1.y, p2.y))};
+    	v2 tmax = {fmax(p0.x, fmax(p1.x, p2.x)), fmax(p0.y, fmax(p1.y, p2.y))};
+
+		t->screen_p0 = p0;
+		t->screen_p1 = p1;
+		t->screen_p2 = p2;
+
+    	t->min_x = floorf(tmin.x);
+    	t->max_x = floorf(tmax.x) + 1;
+    	t->min_y = floorf(tmin.y);
+    	t->max_y = floorf(tmax.y) + 1;
+
+    	if (t->min_x < 0) t->min_x = 0;
+    	if (t->min_y < 0) t->min_y = 0;
+    	if (t->max_x > game->width) t->max_x = game->width;
+    	if (t->max_y > game->height) t->max_y = game->height;
+		if (t->min_x >= t->max_x || t->min_y >= t->max_y)
+			continue;
+
+		for (int j = 0; j < TILES_COUNT; j++)
+		{
+			v2 clip_min, clip_max;
+
+			get_tile_clip_bounds(game, j, clip_min, clip_max);
+			
+			int cmin_x = clamp(clip_min.x, clip_max.x, t->min_x);
+			int cmin_y = clamp(clip_min.y, clip_max.y, t->min_y);
+			int cmax_x = clamp(clip_min.x, clip_max.x, t->max_x);
+			int cmax_y = clamp(clip_min.y, clip_max.y, t->max_y);
+
+			if (cmin_x >= cmax_x || cmin_y >= cmax_y)
+				continue;
+			assert(game->triangles_per_tile_count[j] < MAX_TRIANGLE_COUNT_PER_TILE);
+			game->triangles_per_tile[j][game->triangles_per_tile_count[j]++] = game->triangle_count;
+		}
+		game->triangle_count++;
 	}
 }
 
@@ -388,6 +472,30 @@ void draw_cube(Game *game, v3 c, v3 rotation, float radius, v3 color)
         draw_triangle(game, triangles[i][0], triangles[i][1], triangles[i][2], color);
 }
 
+extern "C" void *game_thread_work(void *data)
+{
+	Game *game = (Game *)data;
+
+	int index = ++game->next_thread_index;
+
+	printf("lanched thread %d\n", index);
+	while (1)
+	{
+		int tile_index = game->next_work_index++;
+
+		if (tile_index >= TILES_COUNT)
+		{
+			usleep(1000);
+			continue;
+		}
+
+		game->finished_work[index] = 0; // TODO: what if main thread checked if finished before this line
+		render_tile(game, tile_index);
+		game->finished_work[index] = 1;
+	}
+
+	return 0;
+}
 
 
 extern "C" void game_update_and_render(Game *game)
@@ -438,6 +546,8 @@ extern "C" void game_update_and_render(Game *game)
 
 	}
 	game->triangle_count = 0;
+	for (int i = 0; i < TILES_COUNT; i++)
+		game->triangles_per_tile_count[i] = 0;
 
 	{
 		game->near_clip_plane = 0.08f;
@@ -473,7 +583,8 @@ extern "C" void game_update_and_render(Game *game)
 	{
 		for (int x = 0; x < CUBES_WIDTH; x++)
 		{
-			v3 p = V3(x * 0.42, game->cubes_height[z][x] * 0.3, -z * 0.42) + cubes_offset;
+			float r = 0.2;
+			v3 p = V3((x * r * 2.1 - CUBES_WIDTH * 0.5f * r * 2.1), game->cubes_height[z][x] * 0.3, -z * r * 2.2) + cubes_offset;
 			v3 color = lerp(V3(0.2, 0.8, 0.3), V3(0.1, 0.9, 0.7), game->cubes_height[z][x]);
     		draw_cube(game, p, rotation, 0.2, color);
 		}
@@ -505,6 +616,7 @@ extern "C" void game_update_and_render(Game *game)
 
 	clock_gettime(CLOCK_MONOTONIC, &time_end);
 	game->last_frame_time = (time_end.tv_sec - time_start.tv_sec) * 1000.0 + (time_end.tv_nsec - time_start.tv_nsec) / 1000000.0;
+	game->total_time += game->last_frame_time;
     game->time += DT;
 	game->frame++;
 }

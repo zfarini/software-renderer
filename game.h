@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
+#include <stdatomic.h>
 #include <assert.h>
 
 #define internal static
@@ -27,11 +28,28 @@
 
 typedef struct 
 {
-	v3 p0, p1, p2, color;
+	v3 p0, p1, p2;
+
+	v3 screen_p0, screen_p1, screen_p2;
+
+	int min_x, min_y, max_x, max_y;
+
+	v3 color;
+
 } Triangle;
 
-#define CUBES_WIDTH 30
-#define CUBES_HEIGHT 30
+#define THREADS 1
+
+#define MAX_TRIANGLE_COUNT (128000)
+#define TILES_PER_WIDTH 4
+#define TILES_PER_HEIGHT 4
+#define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
+
+#define CORE_COUNT (4)
+#define CUBES_WIDTH 100
+#define CUBES_HEIGHT 100
+
+#define MAX_TRIANGLE_COUNT_PER_TILE (MAX_TRIANGLE_COUNT)
 
 
 typedef struct
@@ -66,14 +84,27 @@ typedef struct
 
     float cubes_height[CUBES_WIDTH][CUBES_HEIGHT];
     float time;
+
+	float total_time;
 	int frame;
 
 	int go_in, go_back;
 
+
+
 	v2 samples_offset[MAX_SAMPLES_PER_PIXEL];
+
+
+	int triangles_per_tile[TILES_COUNT][MAX_TRIANGLE_COUNT_PER_TILE];
+	int triangles_per_tile_count[TILES_COUNT];
+
+	volatile _Atomic int next_work_index;
+	volatile _Atomic int finished_work[CORE_COUNT];
+	volatile _Atomic int next_thread_index;
 } Game;
 
 
 typedef void GameUpdateAndRenderFn(Game *game);
+typedef void *GameThreadWorkFn(void *);
 
 #endif
