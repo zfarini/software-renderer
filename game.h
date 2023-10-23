@@ -22,22 +22,20 @@
 #define DEG_TO_RAD (PI / 180.0)
 #define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(*(arr)))
 
-#define MAX_SAMPLES_PER_PIXEL (32)
-#define SAMPLES_PER_PIXEL (4)
-
 #include "math.h"
 
 
-#define THREADS 1
+#define MAX_SAMPLES_PER_PIXEL (32)
+#define SAMPLES_PER_PIXEL (1)
 
 #define MAX_TRIANGLE_COUNT (6000000)
-#define TILES_PER_WIDTH 16
-#define TILES_PER_HEIGHT 16
+#define TILES_PER_WIDTH 32
+#define TILES_PER_HEIGHT 32
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
 
 #define CORE_COUNT (8)
-#define CUBES_WIDTH 100
-#define CUBES_HEIGHT 100
+#define CUBES_WIDTH 20
+#define CUBES_HEIGHT 20
 
 #define MAX_TRIANGLE_COUNT_PER_TILE (MAX_TRIANGLE_COUNT)
 
@@ -70,17 +68,13 @@ struct Texture
 typedef struct 
 {
 	v3 p0, p1, p2;
-
-	v3 screen_p0, screen_p1, screen_p2;
-
     v3 n0, n1, n2;
-
 	v2 uv0, uv1, uv2;
-
-	int min_x, min_y, max_x, max_y;
-
 	Texture *texture;
 	v3 color;
+    // computed
+	v3 screen_p0, screen_p1, screen_p2;
+	int min_x, min_y, max_x, max_y;
 } Triangle;
 
 
@@ -147,8 +141,17 @@ typedef struct
 
 	Texture grass_tex;
 	Texture grass_top_tex;
+    Texture starwars_tex;
 
 	ThreadWork *curr_thread_work;
+
+
+    Mesh cow_mesh;
+    Mesh monkey_mesh;
+    Mesh starwars_mesh;
+
+    Mesh starwars_animation[116];
+    float animation_time;
 } Game;
 
 

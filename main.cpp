@@ -6,11 +6,11 @@
 #include <sys/stat.h> 
 #include <pthread.h>
 
-#define CODE_RELOADING 1
+#define CODE_RELOADING 0
 
-//#if (!CODE_RELOADING)
-//#include "game.cpp"
-//#endif
+#if (!CODE_RELOADING)
+#include "game.cpp"
+#endif
 
 time_t get_last_write_time(const char *filename)
 {

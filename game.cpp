@@ -1,5 +1,4 @@
 #include "game.h"
-#include "cow.h"
 #include "math.h"
 #include <stdlib.h>
 #define STB_IMAGE_IMPLEMENTATION
@@ -20,7 +19,7 @@ void read_vertex(char **line, int *f)
 	*line = *line + 1;	
 }
 
-char *read_entire_file(char *filename)
+char *read_entire_file(const char *filename)
 {
     FILE *f = fopen(filename, "rb");
     if (!f)
@@ -40,7 +39,7 @@ char *read_entire_file(char *filename)
     return result;
 }
 
-Mesh load_mesh(char *filename, Texture *texture)
+Mesh load_mesh(const char *filename, Texture *texture = 0)
 {
 	char *file = read_entire_file(filename);
 
@@ -56,6 +55,9 @@ Mesh load_mesh(char *filename, Texture *texture)
     int vertex_count = 0;
 
 	mesh.triangles = (Triangle *)malloc(max_triangle_count * sizeof(*mesh.triangles));
+
+    float max_abs = FLT_MIN;
+
 
     int uv_count = 0;
     int vn_count = 0;
@@ -73,6 +75,9 @@ Mesh load_mesh(char *filename, Texture *texture)
 			v.y = strtof(line, &line);
 			line++;
 			v.z = strtof(line, &line);
+
+
+            max_abs = fmax(max_abs, fmax(v.x, fmax(v.y, v.z)));
 
 			assert(vertex_count < max_vertices_count);
             vertices[vertex_count++] = v;
@@ -105,7 +110,7 @@ Mesh load_mesh(char *filename, Texture *texture)
                 assert(f0[1] > 0 && f1[1] > 0 && f2[1] > 0);
                 t->uv0 = V2(uvs[f0[1] - 1].x, uvs[f0[1] - 1].y);
                 t->uv1 = V2(uvs[f1[1] - 1].x, uvs[f1[1] - 1].y);
-                t->uv2 = V2(uvs[f1[2] - 1].x, uvs[f1[2] - 1].y);
+                t->uv2 = V2(uvs[f2[1] - 1].x, uvs[f2[1] - 1].y);
             }
             if (f0[2])
             {
@@ -146,6 +151,17 @@ Mesh load_mesh(char *filename, Texture *texture)
 			line++;
 		if (*line == '\n') line++;
 	}
+
+
+
+    float s = 1.f / max_abs;
+
+    for (int i = 0; i < mesh.triangle_count; i++)
+    {
+        mesh.triangles[i].p0 *= s;
+        mesh.triangles[i].p1 *= s;
+        mesh.triangles[i].p2 *= s;
+    }
     free(vertices);
     free(vns);
     free(uvs);
@@ -197,6 +213,7 @@ Texture load_texture(const char *filename)
             pixel++;
         }
     }
+    printf("loaded %s %d %d\n", filename, w, h);
     stbi_image_free(pixels);
     return tex;
 }
@@ -312,6 +329,10 @@ THREAD_WORK_FUNC(render_tile_work)
         v3 tp1 = world_to_camera(game, t->p1);
         v3 tp2 = world_to_camera(game, t->p2);
 
+        v3 n0 = transpose(game->camera_rotation_mat) * t->n0;
+        v3 n1 = transpose(game->camera_rotation_mat) * t->n1;
+        v3 n2 = transpose(game->camera_rotation_mat) * t->n2;
+
 		v3 p0 = t->screen_p0;
 		v3 p1 = t->screen_p1;
 		v3 p2 = t->screen_p2;
@@ -419,12 +440,18 @@ THREAD_WORK_FUNC(render_tile_work)
                             v2 uv = b.w * t->uv0 + b.u * t->uv1 + b.v * t->uv2;
 
 
+                            // TODO: why does this not work?
+                           v3 n = noz(b.w * n0 + b.u * n1 + b.v * n2);
+
+                           
+ //                          normal = n;
+
 							v3 c = t->color;
 
 							if (t->texture)
 							{
-								u.x = u.x - floorf(u.x);
-								u.y = u.y - floorf(u.y);
+								uv.x = uv.x - floorf(uv.x);
+								uv.y = uv.y - floorf(uv.y);
 
 								// TODO: bilinear filtering
 								int x = uv.x * t->texture->width;
@@ -432,31 +459,24 @@ THREAD_WORK_FUNC(render_tile_work)
 
 								if (x >= t->texture->width) x = t->texture->width - 1;
 								if (y >= t->texture->height) y = t->texture->height - 1;
+                                if (x < 0) x = 0;
+                                if (y < 0) y = 0;
 
 								uint32_t tex = *(t->texture->pixels + y * t->texture->width + x);
 
 
-	//							c *= u32_to_v3_01(tex);
+
+								c *= u32_to_v3_01(tex);
 							}
 
 #if 1
-								// TODO: this normal is wrong!
 							float light = max(0, dot(-noz(p), normal));
 #else
 							float light = max(0, dot(noz(V3(0, 0, -10) - p), normal));
 #endif
 		
-	//						light = 1;
 						 	c *= light;
 		
-
-							//c = (normal + V3(1, 1, 1)) * 0.5f;
-#if 0
-							z *= 0.1f;
-							if (z > 1)
-								z = 1;
-							 c = V3(z, z, z);
-#endif
 	    	   				uint32_t color32 = ((uint32_t)(c.r * 255 + 0.5f) << 24) |
 	    	   				         	       ((uint32_t)(c.g * 255 + 0.5f) << 16) |
 	    	   				         	       ((uint32_t)(c.b * 255 + 0.5f) << 8);
@@ -619,6 +639,8 @@ struct DrawTriangleData
 	Triangle triangles[100];
 	int triangle_count;
 };
+
+static_assert(sizeof(DrawTriangleData) <= sizeof(((ThreadWork *)0)->data), "add more size to thread work data");
 
 THREAD_WORK_FUNC(draw_triangle_work)
 {
@@ -820,10 +842,10 @@ THREAD_WORK_FUNC(draw_triangle_work)
 	return (0);
 }
 
-void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color = V3(1, 1, 1),  Texture *texture = 0, v2 uv0 = V2(0, 0), v2 uv1 = V2(1, 0), v2 uv2 = V2(0, 1))
+void draw_triangle(Game *game, Triangle *t)
 {
 	// TODO: check this
-	if (dot(cross(tp1 - tp0, tp2 - tp0), tp0 - game->camera_p) >= 0)
+	if (dot(cross(t->p1 - t->p0, t->p2 - t->p0), t->p1 - game->camera_p) >= 0)
 		return ;
 
 	ThreadWork *work = game->curr_thread_work;
@@ -835,22 +857,11 @@ void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color = V3(1, 1, 1),  
 		((DrawTriangleData *)work->data)->triangle_count = 0;
 		work->callback = draw_triangle_work;
 	}
-
-
 	DrawTriangleData *data = (DrawTriangleData *)work->data;
 
 	data->game = game;
 
-	Triangle *t = &data->triangles[data->triangle_count++];
-
-	t->p0 = tp0;
-	t->p1 = tp1;
-	t->p2 = tp2;
-	t->color = color;
-	t->texture = texture;
-	t->uv0 = uv0;
-	t->uv1 = uv1;
-	t->uv2 = uv2;
+    data->triangles[data->triangle_count++] = *t;
 
 	game->curr_thread_work = work;
 }
@@ -896,9 +907,51 @@ void draw_cube(Game *game, v3 c, v3 rotation, float radius, v3 color, Texture *t
 
 		if (i % 2)
 			uv0 = V2(0, 0), uv1 = V2(1, 1), uv2 = V2(0, 1);
-        draw_triangle(game, triangles[i].p0, triangles[i].p1, triangles[i].p2, color, triangles[i].tex, uv0, uv1, uv2);
+
+        Triangle t;
+
+        t.p0 = triangles[i].p0;
+        t.p1 = triangles[i].p1;
+        t.p2 = triangles[i].p2;
+        t.uv0 = uv0;
+        t.uv1 = uv1;
+        t.uv2 = uv2;
+
+        v3 normal = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
+        t.n0 = normal;
+        t.n1 = normal;
+        t.n2 = normal;
+
+        t.texture = triangles[i].tex;
+        t.color = color;
+
+        draw_triangle(game, &t);
 	}
 
+}
+
+void draw_mesh(Game *game, Mesh *mesh, v3 position, v3 scale, v3 rotation, v3 color = V3(1, 1, 1))
+{
+    m3x3 rot_matrix = z_rotation(rotation.z) * (y_rotation(rotation.y) * x_rotation(rotation.x));
+    m3x3 inv_matrix = x_rotation(-rotation.x) * (y_rotation(-rotation.y) * z_rotation(-rotation.z));
+    m3x3 normal_matrix = transpose(inv_matrix);
+    
+    for (int i = 0; i < mesh->triangle_count; i++)
+    {
+        Triangle t = mesh->triangles[i];
+
+        t.p0 = (rot_matrix * t.p0) * scale + position;
+        t.p1 = (rot_matrix * t.p1) * scale + position;
+        t.p2 = (rot_matrix * t.p2) * scale + position;
+
+        t.n0 = noz(normal_matrix * t.n0);
+        t.n1 = noz(normal_matrix * t.n1);
+        t.n2 = noz(normal_matrix * t.n2);
+
+        t.color = color;
+
+        draw_triangle(game, &t);
+    }
 }
 
 extern "C" void *game_thread_work(void *data)
@@ -924,6 +977,25 @@ extern "C" void *game_thread_work(void *data)
 	return 0;
 }
 
+void load_animation(const char *dir, Mesh *out, int frame_count, Texture *texture)
+{
+    for (int i = 0; i < frame_count; i++)
+    {
+        char filename[64];
+
+        char const *zero = "000";
+
+        if (i + 1 >= 100)
+            zero = "0";
+        else if (i + 1 >= 10)
+            zero = "00";
+
+        snprintf(filename, sizeof(filename), "%s/frame%s%d.obj", dir, zero, i + 1);
+
+        out[i] = load_mesh(filename, texture);
+    }
+}
+
 extern "C" void game_update_and_render(Game *game)
 {
 	struct timespec time_start, time_end;
@@ -933,8 +1005,17 @@ extern "C" void game_update_and_render(Game *game)
 
 	if (!game->is_initialized)
     {
+        game->starwars_tex = load_texture("starwars.png");
 		game->grass_tex = load_texture("grass.png");
 		game->grass_top_tex = load_texture("grass_top.png");
+
+        game->starwars_mesh = load_mesh("starwars.obj",  &game->starwars_tex);
+
+        game->cow_mesh = load_mesh("cow.obj", 0);
+        game->monkey_mesh = load_mesh("monkey.obj", 0);
+
+
+        load_animation("starwars_animation", game->starwars_animation, 116, &game->starwars_tex);
 
 		game->near_clip_plane = 0.08f;
 		game->far_clip_plane = 1000;
@@ -947,7 +1028,7 @@ extern "C" void game_update_and_render(Game *game)
 		assert(game->triangles && game->thread_work && game->zbuffer && game->pixels_aa);
 
         game->camera_p = (v3){0, 1, 8};
-       game->camera_p = (v3){};
+       game->camera_p = (v3){7, 3, 0};
 
         game->film_width = tan((game->fov*0.5f) * DEG_TO_RAD) * 2 * game->near_clip_plane;
         game->film_height = game->film_width * ((float)game->height / game->width);
@@ -1020,7 +1101,7 @@ extern "C" void game_update_and_render(Game *game)
 //
 	
     
-#if 1
+#if 0
 	v3 rotation = {};
 	for (int z = 0; z < CUBES_HEIGHT; z++)
 	{
@@ -1037,30 +1118,23 @@ extern "C" void game_update_and_render(Game *game)
 			}
 		}
 	}
+#endif 
 
-#if 1
-    float a = game->time;
-	rotation = V3(a, a, a);
-	for (int i = 0; i < ntris; i++)
-	{
-		v3 v0 = vertices[nvertices[i * 3]];
-		v3 v1 = vertices[nvertices[i * 3 + 1]];
-		v3 v2 = vertices[nvertices[i * 3 + 2]];
+    for (int i = 0; i < 100; i++)
+    {
+        int x = i % 10;
+        int y = i / 10;
 
-		v0 = rotate(v0, rotation);
-		v1 = rotate(v1, rotation);
-		v2 = rotate(v2, rotation);
+        draw_mesh(game, &game->starwars_animation[(game->frame + i) % 116], V3(x * 2.5f, 3, -y * 2.5f), V3(2, 2, 2), V3(0, 0, 0), V3((float)(x + 1) / 10, (float)(10 - y) / 10, 0.2));
+    
+    }
 
 
-		v0 *= 0.25f;
-		v1 *= 0.25f;
-		v2 *= 0.25f;
+    draw_mesh(game, &game->monkey_mesh, V3(-2, 5, -2), V3(1, 1, 1), V3(game->time * 2, 0, 0), V3(0.8, 0.4, 0.2));
 
-		draw_triangle(game, v0, v1, v2, V3(1, 1, 1));
-	}
-#endif
-
-#endif
+    draw_mesh(game, &game->cow_mesh, V3(3, 5, -2), V3(2, 2, 2), V3(game->time, game->time, game->time));
+    
+    game->animation_time += DT;
 
 	render_game(game);
 
