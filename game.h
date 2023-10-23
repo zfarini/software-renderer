@@ -14,6 +14,7 @@
 #include <string.h>
 #include <stdatomic.h>
 #include <assert.h>
+#include <stdalign.h>
 
 #define internal static
 #define DT (1.f / 60)
@@ -38,18 +39,36 @@ typedef struct
 
 } Triangle;
 
+
 #define THREADS 1
 
-#define MAX_TRIANGLE_COUNT (128000)
+#define MAX_TRIANGLE_COUNT (10000000)
 #define TILES_PER_WIDTH 4
 #define TILES_PER_HEIGHT 4
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
 
 #define CORE_COUNT (4)
-#define CUBES_WIDTH 100
-#define CUBES_HEIGHT 100
+#define CUBES_WIDTH 1000
+#define CUBES_HEIGHT 1000
 
 #define MAX_TRIANGLE_COUNT_PER_TILE (MAX_TRIANGLE_COUNT)
+
+
+typedef struct ThreadWork ThreadWork;
+
+#define THREAD_WORK_FUNC(func) void *func(ThreadWork *work)
+
+typedef THREAD_WORK_FUNC(ThreadWorkCallbackFn);
+
+struct alignas(max_align_t) ThreadWork
+{
+	uint8_t data[256];
+	
+
+	ThreadWorkCallbackFn *callback;
+
+	volatile _Atomic int finished;
+};
 
 
 typedef struct
@@ -65,7 +84,7 @@ typedef struct
 
 	v3 P, dP, ddP;
 
-	int triangle_count;
+	volatile _Atomic int triangle_count;
 	Triangle *triangles;
 
 	int should_quit;
@@ -96,10 +115,12 @@ typedef struct
 
 
 	int triangles_per_tile[TILES_COUNT][MAX_TRIANGLE_COUNT_PER_TILE];
-	int triangles_per_tile_count[TILES_COUNT];
+	volatile _Atomic int triangles_per_tile_count[TILES_COUNT];
 
 	volatile _Atomic int next_work_index;
-	volatile _Atomic int finished_work[CORE_COUNT];
+	int real_work_count;
+	volatile _Atomic int work_count;
+	ThreadWork *thread_work; // this should loop
 	volatile _Atomic int next_thread_index;
 } Game;
 

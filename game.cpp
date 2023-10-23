@@ -62,8 +62,19 @@ float edge(v3 a, v3 b, v3 c)
 { return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x); }
 
 
-void render_tile(Game *game, int tile_index)
+struct RenderTileData
 {
+	Game *game;
+	int tile_index;
+};
+
+THREAD_WORK_FUNC(render_tile_work)
+{
+	RenderTileData *data = (RenderTileData *)work->data;
+
+	Game *game = data->game;
+	int tile_index = data->tile_index;
+
 	v2 clip_min, clip_max;
 
 	get_tile_clip_bounds(game, tile_index, clip_min, clip_max);
@@ -210,40 +221,90 @@ void render_tile(Game *game, int tile_index)
 	    	   				 ((uint32_t)(color.b * 255 + 0.5f) << 8);
 		}
 	}
+	work->finished = 1;
+
+	return 0;
 }
 
-void render_game(Game *game)
+// this runs only on the main thread
+ThreadWork *add_thread_work(Game *game)
 {
-//#pragma omp parallel for
-    
+	return &game->thread_work[game->real_work_count++];
+}
 
-//#pragma omp parallel for
-	//for (int i = 0; i < TILES_COUNT; i++)
-	game->next_work_index = 0;
+inline ThreadWork *get_next_thread_work(Game *game)
+{
 	while (1)
 	{
-		int tile_index = game->next_work_index++;
+		int work_index = game->next_work_index;
+	
+		if (work_index >= game->work_count)
+			return 0;
+		if (atomic_compare_exchange_weak(&game->next_work_index, &work_index, work_index + 1))
+			return &game->thread_work[work_index];	
+	}
+	return 0;
+}
 
-		if (tile_index >= TILES_COUNT)
+void wait_for_all_work_to_finish(Game *game)
+{
+#if 1
+	//atomic_store(&game->work_count, game->real_work_count);
+	game->work_count = game->real_work_count;
+
+	while (1)
+	{
+		ThreadWork *work = get_next_thread_work(game);
+
+		if (!work)
 			break ;
 
-		render_tile(game, tile_index);
+		work->callback(work);
 	}
-	while (1)
+
+
+	int first_non_finished = 0;
+	while (1) // bad!!!!!!!!!
 	{
 		int finished = 1;
-		for (int i = 1; i < CORE_COUNT; i++)
+		for (int i = first_non_finished; i < game->work_count; i++)
 		{
-			if (!game->finished_work[i])
+			if (!game->thread_work[i].finished)
 			{
+				first_non_finished = i;
 				finished = 0;
 				break ;
 			}
 		}
 		if (finished)
 			break ;
-		usleep(1000);
+		usleep(100);
 	}
+
+
+#endif
+}
+
+void render_game(Game *game)
+{
+	wait_for_all_work_to_finish(game);
+
+#if 0
+	for (int i = 0; i < TILES_COUNT; i++)
+	{
+
+		ThreadWork *work = add_thread_work(game);
+	
+		RenderTileData *data = (RenderTileData *)work->data;
+	
+		data->game = game, data->tile_index = i;
+	
+		work->callback = render_tile_work;
+		work->finished = 0;
+	}
+	// add render work
+	wait_for_all_work_to_finish(game);
+#endif
 }
 
 void swap(float &a, float &b)
@@ -272,171 +333,199 @@ float ray_intersect_plane(v3 plane_normal, float d, v3 ray_origin, v3 ray_dir)
 }
 
 // TODO: make this multithreaded
+
+struct DrawTriangleData
+{
+	Game *game;
+	v3 tp0, tp1, tp2, color;
+};
+
+THREAD_WORK_FUNC(draw_triangle_work)
+{
+	work->finished = 1;	
+	return 0;
+
+	DrawTriangleData *data = (DrawTriangleData *)work->data;
+	
+	Game *game = data->game;
+	v3 tp0 = data->tp0, tp1 = data->tp1, tp2 = data->tp2, color = data->color;
+	
+	{
+		Triangle triangles[2];
+		int triangle_count = 0;
+	
+		//TODO: transform points by camera
+		v3 cp0 = world_to_camera(game, tp0);
+		v3 cp1 = world_to_camera(game, tp1);
+		v3 cp2 = world_to_camera(game, tp2);
+		
+	
+		v3 normal = noz(cross(cp1 - cp0, cp2 - cp0));
+	
+	
+		v3 plane_normal = V3(0, 0, -1);
+		float plane_d = -game->near_clip_plane;
+	
+		Triangle t = {cp0, cp1, cp2};
+	
+		// 1 -> are you on the clipped side
+		int d0 = cp0.z > plane_d;
+		int d1 = cp1.z > plane_d;
+		int d2 = cp2.z > plane_d;
+	
+		if (d0 + d1 + d2 == 0)
+		{
+			triangles[triangle_count++] = (Triangle){cp0, cp1, cp2};
+		}
+		else if (d0 + d1 + d2 != 3)
+		{
+	
+			// clip triangle against plane
+			float t0 = ray_intersect_plane(plane_normal, plane_d, cp0, cp1 - cp0);	
+			v3 x0 = cp0 + t0 * (cp1 - cp0);
+			
+			float t1 = ray_intersect_plane(plane_normal, plane_d, cp0, cp2 - cp0);	
+			v3 x1 = cp0 + t1 * (cp2 - cp0);
+		
+			float t2 = ray_intersect_plane(plane_normal, plane_d, cp1, cp2 - cp1);	
+			v3 x2 = cp1 + t2 * (cp2 - cp1);
+		
+			if (t0 > 1) t0 = -1;
+			if (t1 > 1) t1 = -1;
+			if (t2 > 1) t2 = -1;
+		
+		
+			if (t0 < 0)
+				swap(x0, x2), swap(t0, t2);
+			if (t1 < 0)
+				swap(x1, x2), swap(t1, t2);
+		
+		
+		
+			if (d0 + d1 + d2 == 1)
+			{
+				v3 p0, p1;
+		
+				if (d0) p0 = cp1, p1 = cp2;
+				else if (d1) p0 = cp0, p1 = cp2;
+				else if (d2) p0 = cp0, p1 = cp1;
+		
+				/*
+					p0   p1
+		
+				   	x0   x1
+				*/
+				// in case p1 was in the "left" of p0
+				if (dot(noz(p1 - x0), noz(x1 - x0)) < dot(noz(p0 - x0), noz(x1 - x0)))
+					swap(p0, p1);
+		
+		
+					//	x0 -= V3(0, 0, 0.01f);
+					//	x1 -= V3(0, 0, 0.01f);
+						
+						Triangle t0 = {x0, x1, p1};
+						Triangle t1 = {x0, p1, p0};
+		
+						if (dot(normal, noz(cross(t0.p1 - t0.p0, t0.p2 - t0.p0))) < 0)
+							swap(t0.p1, t0.p2);
+						if (dot(normal, noz(cross(t1.p1 - t1.p0, t1.p2 - t1.p0))) < 0)
+							swap(t1.p1, t1.p2);
+		
+						triangles[triangle_count++] = t0;
+						triangles[triangle_count++] = t1;
+					}
+				else if (d0 + d1 + d2 == 2)
+				{
+					v3 p;
+					if (!d0) p = cp0;
+					else if (!d1) p = cp1;
+					else if (!d2) p = cp2;
+					if (dot(normal, noz(cross(x1 - x0, p - x0))) < 0)
+						triangles[triangle_count++] = (Triangle){x0, p, x1};
+					else
+						triangles[triangle_count++] = (Triangle){x0, x1, p};
+				}
+		}
+#if 1
+		for (int i = 0; i < triangle_count; i++)
+		{
+			assert(game->triangle_count < MAX_TRIANGLE_COUNT);
+	
+			Triangle *t = &triangles[i];
+
+	
+			*t = triangles[i];
+			t->p0 = camera_to_world(game, t->p0);
+			t->p1 = camera_to_world(game, t->p1);
+			t->p2 = camera_to_world(game, t->p2);
+			t->color = color;
+	
+			v3 p0 = project_to_screen(game, t->p0);
+	    	v3 p1 = project_to_screen(game, t->p1);
+	    	v3 p2 = project_to_screen(game, t->p2);
+	
+	    	v2 tmin = {fmin(p0.x, fmin(p1.x, p2.x)), fmin(p0.y, fmin(p1.y, p2.y))};
+	    	v2 tmax = {fmax(p0.x, fmax(p1.x, p2.x)), fmax(p0.y, fmax(p1.y, p2.y))};
+	
+			t->screen_p0 = p0;
+			t->screen_p1 = p1;
+			t->screen_p2 = p2;
+	
+	    	t->min_x = floorf(tmin.x);
+	    	t->max_x = floorf(tmax.x) + 1;
+	    	t->min_y = floorf(tmin.y);
+	    	t->max_y = floorf(tmax.y) + 1;
+	
+	    	if (t->min_x < 0) t->min_x = 0;
+	    	if (t->min_y < 0) t->min_y = 0;
+	    	if (t->max_x > game->width) t->max_x = game->width;
+	    	if (t->max_y > game->height) t->max_y = game->height;
+			if (t->min_x >= t->max_x || t->min_y >= t->max_y)
+				continue;
+
+			int index = game->triangle_count++;
+			game->triangles[index] = *t;
+
+#if 1
+			for (int j = 0; j < TILES_COUNT; j++)
+			{
+				v2 clip_min, clip_max;
+	
+				get_tile_clip_bounds(game, j, clip_min, clip_max);
+				
+				int cmin_x = clamp(clip_min.x, clip_max.x, t->min_x);
+				int cmin_y = clamp(clip_min.y, clip_max.y, t->min_y);
+				int cmax_x = clamp(clip_min.x, clip_max.x, t->max_x);
+				int cmax_y = clamp(clip_min.y, clip_max.y, t->max_y);
+	
+				if (cmin_x >= cmax_x || cmin_y >= cmax_y)
+					continue;
+				assert(game->triangles_per_tile_count[j] < MAX_TRIANGLE_COUNT_PER_TILE);
+				game->triangles_per_tile[j][game->triangles_per_tile_count[j]++] = index;
+			}
+#endif
+		}
+#endif
+	}
+	work->finished = 1;
+	return (0);
+}
+
 void draw_triangle(Game *game, v3 tp0, v3 tp1, v3 tp2, v3 color)
 {
-	v3 normal = noz(cross(tp1 - tp0, tp2 - tp0));
-
-	// TODO: check if this is right
-	if (dot(normal, tp0 - game->camera_p) >= 0)
+	if (dot(cross(tp1 - tp0, tp2 - tp0), tp0 - game->camera_p) >= 0)
 		return ;
-	
 
-	Triangle triangles[2];
-	int triangle_count = 0;
+	ThreadWork *work = add_thread_work(game);
 
-	//TODO: transform points by camera
-	v3 cp0 = world_to_camera(game, tp0);
-	v3 cp1 = world_to_camera(game, tp1);
-	v3 cp2 = world_to_camera(game, tp2);
-	
+	work->finished = 0;
 
-	normal = noz(cross(cp1 - cp0, cp2 - cp0));
+	DrawTriangleData *data = (DrawTriangleData *)work->data;
 
 
-	v3 plane_normal = V3(0, 0, -1);
-	float plane_d = -game->near_clip_plane;
+	data->game = game, data->tp0 = tp0, data->tp1 = tp1, data->tp2 = tp2, data->color = color;
 
-	Triangle t = {cp0, cp1, cp2};
-
-	// 1 -> are you on the clipped side
-	int d0 = cp0.z > plane_d;
-	int d1 = cp1.z > plane_d;
-	int d2 = cp2.z > plane_d;
-
-	if (d0 + d1 + d2 == 3)
-		return ;
-	else if (d0 + d1 + d2 == 0)
-	{
-		triangles[triangle_count++] = (Triangle){cp0, cp1, cp2};
-	}
-	else
-	{
-
-		// clip triangle against plane
-		float t0 = ray_intersect_plane(plane_normal, plane_d, cp0, cp1 - cp0);	
-		v3 x0 = cp0 + t0 * (cp1 - cp0);
-		
-		float t1 = ray_intersect_plane(plane_normal, plane_d, cp0, cp2 - cp0);	
-		v3 x1 = cp0 + t1 * (cp2 - cp0);
-	
-		float t2 = ray_intersect_plane(plane_normal, plane_d, cp1, cp2 - cp1);	
-		v3 x2 = cp1 + t2 * (cp2 - cp1);
-	
-		if (t0 > 1) t0 = -1;
-		if (t1 > 1) t1 = -1;
-		if (t2 > 1) t2 = -1;
-	
-	
-	
-		if ((t0 < 0) + (t1 < 0) + (t2 < 0) > 1)
-			printf("bad2 %d\n", game->frame);
-	
-		if (t0 < 0)
-			swap(x0, x2), swap(t0, t2);
-		if (t1 < 0)
-			swap(x1, x2), swap(t1, t2);
-	
-	
-		if (t0 < 0 || t1 < 0)
-			printf("bad3 %d\n", game->frame);
-	
-		if (d0 + d1 + d2 == 1)
-		{
-			v3 p0, p1;
-	
-			if (d0) p0 = cp1, p1 = cp2;
-			else if (d1) p0 = cp0, p1 = cp2;
-			else if (d2) p0 = cp0, p1 = cp1;
-	
-			/*
-				p0   p1
-	
-			   	x0   x1
-			*/
-			// in case p1 was in the "left" of p0
-			if (dot(noz(p1 - x0), noz(x1 - x0)) < dot(noz(p0 - x0), noz(x1 - x0)))
-				swap(p0, p1);
-	
-	
-				//	x0 -= V3(0, 0, 0.01f);
-				//	x1 -= V3(0, 0, 0.01f);
-					
-					Triangle t0 = {x0, x1, p1};
-					Triangle t1 = {x0, p1, p0};
-	
-					if (dot(normal, noz(cross(t0.p1 - t0.p0, t0.p2 - t0.p0))) < 0)
-						swap(t0.p1, t0.p2);
-					if (dot(normal, noz(cross(t1.p1 - t1.p0, t1.p2 - t1.p0))) < 0)
-						swap(t1.p1, t1.p2);
-	
-					triangles[triangle_count++] = t0;
-					triangles[triangle_count++] = t1;
-				}
-			else if (d0 + d1 + d2 == 2)
-			{
-				v3 p;
-				if (!d0) p = cp0;
-				else if (!d1) p = cp1;
-				else if (!d2) p = cp2;
-				if (dot(normal, noz(cross(x1 - x0, p - x0))) < 0)
-					triangles[triangle_count++] = (Triangle){x0, p, x1};
-				else
-					triangles[triangle_count++] = (Triangle){x0, x1, p};
-			}
-	}
-	for (int i = 0; i < triangle_count; i++)
-	{
-		assert(game->triangle_count < MAX_TRIANGLE_COUNT);
-
-		Triangle *t = &game->triangles[game->triangle_count];
-
-		*t = triangles[i];
-		t->p0 = camera_to_world(game, t->p0);
-		t->p1 = camera_to_world(game, t->p1);
-		t->p2 = camera_to_world(game, t->p2);
-		t->color = color;
-
-		v3 p0 = project_to_screen(game, t->p0);
-    	v3 p1 = project_to_screen(game, t->p1);
-    	v3 p2 = project_to_screen(game, t->p2);
-
-    	v2 tmin = {fmin(p0.x, fmin(p1.x, p2.x)), fmin(p0.y, fmin(p1.y, p2.y))};
-    	v2 tmax = {fmax(p0.x, fmax(p1.x, p2.x)), fmax(p0.y, fmax(p1.y, p2.y))};
-
-		t->screen_p0 = p0;
-		t->screen_p1 = p1;
-		t->screen_p2 = p2;
-
-    	t->min_x = floorf(tmin.x);
-    	t->max_x = floorf(tmax.x) + 1;
-    	t->min_y = floorf(tmin.y);
-    	t->max_y = floorf(tmax.y) + 1;
-
-    	if (t->min_x < 0) t->min_x = 0;
-    	if (t->min_y < 0) t->min_y = 0;
-    	if (t->max_x > game->width) t->max_x = game->width;
-    	if (t->max_y > game->height) t->max_y = game->height;
-		if (t->min_x >= t->max_x || t->min_y >= t->max_y)
-			continue;
-
-		for (int j = 0; j < TILES_COUNT; j++)
-		{
-			v2 clip_min, clip_max;
-
-			get_tile_clip_bounds(game, j, clip_min, clip_max);
-			
-			int cmin_x = clamp(clip_min.x, clip_max.x, t->min_x);
-			int cmin_y = clamp(clip_min.y, clip_max.y, t->min_y);
-			int cmax_x = clamp(clip_min.x, clip_max.x, t->max_x);
-			int cmax_y = clamp(clip_min.y, clip_max.y, t->max_y);
-
-			if (cmin_x >= cmax_x || cmin_y >= cmax_y)
-				continue;
-			assert(game->triangles_per_tile_count[j] < MAX_TRIANGLE_COUNT_PER_TILE);
-			game->triangles_per_tile[j][game->triangles_per_tile_count[j]++] = game->triangle_count;
-		}
-		game->triangle_count++;
-	}
+	work->callback = draw_triangle_work;
 }
 
 void draw_cube(Game *game, v3 c, v3 rotation, float radius, v3 color)
@@ -481,17 +570,14 @@ extern "C" void *game_thread_work(void *data)
 	printf("lanched thread %d\n", index);
 	while (1)
 	{
-		int tile_index = game->next_work_index++;
+		ThreadWork *work = get_next_thread_work(game);
 
-		if (tile_index >= TILES_COUNT)
+		if (!work)
 		{
-			usleep(1000);
+			usleep(100);
 			continue;
 		}
-
-		game->finished_work[index] = 0; // TODO: what if main thread checked if finished before this line
-		render_tile(game, tile_index);
-		game->finished_work[index] = 1;
+		work->callback(work);
 	}
 
 	return 0;
@@ -511,7 +597,8 @@ extern "C" void game_update_and_render(Game *game)
 		game->far_clip_plane = 1000;
 		game->fov = 60;
 
-		game->triangles = (Triangle *)malloc(sizeof(*game->triangles) * 128000);
+		game->triangles = (Triangle *)malloc(sizeof(*game->triangles) * MAX_TRIANGLE_COUNT);
+		game->thread_work = (ThreadWork *)malloc(sizeof(*game->thread_work) * MAX_TRIANGLE_COUNT * 2);
 		game->zbuffer = (float *)malloc(game->width * game->height * MAX_SAMPLES_PER_PIXEL * sizeof(*game->zbuffer));
 		game->pixels_aa = (uint32_t *)malloc(game->width * game->height * MAX_SAMPLES_PER_PIXEL * sizeof(uint32_t));
 
@@ -534,6 +621,10 @@ extern "C" void game_update_and_render(Game *game)
 		}
 		game->is_initialized = 1;
     }
+	game->real_work_count = 0;
+	game->work_count = 0;
+	game->next_work_index = 0;
+
 	for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
 	{
 		int samples_per_dim = sqrtf(SAMPLES_PER_PIXEL);

@@ -6,6 +6,12 @@
 #include <sys/stat.h> 
 #include <pthread.h>
 
+#define CODE_RELOADING 0
+
+#if (!CODE_RELOADING)
+#include "game.cpp"
+#endif
+
 time_t get_last_write_time(const char *filename)
 {
     time_t result = 0;
@@ -33,6 +39,7 @@ int main(void)
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
 
 
+#if CODE_RELOADING
     const char *dll_name = "game.so";
     time_t dll_last_write_time = get_last_write_time(dll_name);
     void *dll = dlopen(dll_name, RTLD_LAZY);
@@ -44,9 +51,9 @@ int main(void)
     assert(dll);
     assert(game_update_and_render);
 
+#endif
 
 #if THREADS
-	game->next_work_index = TILES_COUNT;
 	 for (int i = 1; i < CORE_COUNT; i++)
 	 {
 		 pthread_t thread;
@@ -72,6 +79,7 @@ int main(void)
 
 	while (!game->should_quit)
 	{
+#if CODE_RELOADING
         {
             time_t wt = get_last_write_time(dll_name);
             if (wt != dll_last_write_time)
@@ -87,6 +95,7 @@ int main(void)
             else if (!game_update_and_render)
                 printf("ERROR: failed to load game_update_and_render\n");
         }
+#endif
 
 		SDL_Event ev;
 		while (SDL_PollEvent(&ev))
@@ -155,7 +164,7 @@ int main(void)
 
 
 		}
-        if (game_update_and_render)
+        if (&game_update_and_render)
 		    game_update_and_render(game);
 		
 		{
