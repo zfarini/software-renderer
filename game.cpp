@@ -1,10 +1,167 @@
 #include "game.h"
 #include "cow.h"
 #include "math.h"
+#include <stdlib.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #define print_v3(v) printf("%s = (%f, %f, %f)\n", #v, v.x, v.y, v.z)
+
+void read_vertex(char **line, int *f)
+{
+    int i = 0;
+	f[0] = strtol(*line, line, 10);
+
+	while (**line == '/')
+	{
+		*line = *line + 1;
+        f[++i] = strtol(*line, line, 10);
+	}
+	*line = *line + 1;	
+}
+
+char *read_entire_file(char *filename)
+{
+    FILE *f = fopen(filename, "rb");
+    if (!f)
+    {
+        printf("failed to load file: %s\n", filename);
+        assert(f);
+        return 0;
+    }
+    fseek(f, 0, SEEK_END);
+    long length = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *result = (char *)malloc(length + 1);
+    assert(result);
+    fread(result, 1, length, f);
+    result[length] = 0;
+    fclose(f);
+    return result;
+}
+
+Mesh load_mesh(char *filename, Texture *texture)
+{
+	char *file = read_entire_file(filename);
+
+	Mesh mesh = {};
+
+	int max_vertices_count = 8192 * 128;
+	int max_triangle_count = 8192 * 128;
+
+    v2 *uvs = (v2 *)malloc(max_vertices_count * sizeof(*uvs));
+    v3 *vns = (v3 *)malloc(max_vertices_count * sizeof(*uvs));
+
+	v3 *vertices = (v3 *)malloc(max_vertices_count * sizeof(v3));
+    int vertex_count = 0;
+
+	mesh.triangles = (Triangle *)malloc(max_triangle_count * sizeof(*mesh.triangles));
+
+    int uv_count = 0;
+    int vn_count = 0;
+
+	char *line = file;
+	while (*line)
+	{
+		if (line[0] == 'v' && line[1] == ' ')
+		{
+			line += 2;
+			v3 v;
+
+			v.x = strtof(line, &line);
+			line++;
+			v.y = strtof(line, &line);
+			line++;
+			v.z = strtof(line, &line);
+
+			assert(vertex_count < max_vertices_count);
+            vertices[vertex_count++] = v;
+		}
+		else if (line[0] == 'f' && line[1] == ' ')
+		{
+			line += 2;
+
+            int f0[3] = {0};
+            int f1[3] = {0};
+            int f2[3] = {0};
+
+			read_vertex(&line, f0);
+			read_vertex(&line, f1);
+			read_vertex(&line, f2);
+
+			line--;
+
+			assert(mesh.triangle_count < max_triangle_count);
+
+			Triangle *t = &mesh.triangles[mesh.triangle_count++];
+			assert(f0[0] > 0 && f1[0] > 0 && f2[0] > 0);
+
+			t->p0 = vertices[f0[0] - 1];
+			t->p1 = vertices[f1[0] - 1];
+			t->p2 = vertices[f2[0] - 1];
+            t->texture = texture;
+            if (f0[1])
+            {
+                assert(f0[1] > 0 && f1[1] > 0 && f2[1] > 0);
+                t->uv0 = V2(uvs[f0[1] - 1].x, uvs[f0[1] - 1].y);
+                t->uv1 = V2(uvs[f1[1] - 1].x, uvs[f1[1] - 1].y);
+                t->uv2 = V2(uvs[f1[2] - 1].x, uvs[f1[2] - 1].y);
+            }
+            if (f0[2])
+            {
+                assert(f0[2] > 0 && f1[2] > 0 && f2[2] > 0);
+                t->n0 = vns[f0[2] - 1];
+                t->n1 = vns[f1[2] - 1];
+                t->n2 = vns[f2[2] - 1];
+            }
+            else
+                t->n0 = t->n1 = t->n2 = noz(cross(t->p1 - t->p0, t->p2 - t->p0));
+
+		}
+		else if (line[0] == 'v' && line[1] == 't')
+        {
+            line += 3;
+
+			float u = strtof(line, &line);
+			line++;
+			float v = strtof(line, &line);
+ //           line++;
+            uvs[uv_count++] = V2(u, v);
+        }
+        else if (line[0] == 'v' && line[1] == 'n')
+        {
+            line += 3;
+
+            v3 *v = &vns[vn_count++];
+
+			v->x = strtof(line, &line);
+			line++;
+			v->y = strtof(line, &line);
+            line++;
+			v->z = strtof(line, &line);
+
+            *v = noz(*v);
+        }
+		while (*line && *line != '\n')
+			line++;
+		if (*line == '\n') line++;
+	}
+    free(vertices);
+    free(vns);
+    free(uvs);
+	return mesh;
+}
+
+float ray_intersect_plane(v3 plane_normal, float d, v3 ray_origin, v3 ray_dir)
+{
+	float denom = dot(ray_dir, plane_normal);
+
+	if (fabsf(denom) < 0.000001f)
+		return -1;
+	
+	return (-d - dot(plane_normal, ray_origin)) / denom;
+}
+
 
 Texture load_texture(const char *filename)
 {
@@ -151,6 +308,10 @@ THREAD_WORK_FUNC(render_tile_work)
 	{
 		Triangle *t = &game->triangles[game->triangles_per_tile[tile_index][j]];
 
+        v3 tp0 = world_to_camera(game, t->p0);
+        v3 tp1 = world_to_camera(game, t->p1);
+        v3 tp2 = world_to_camera(game, t->p2);
+
 		v3 p0 = t->screen_p0;
 		v3 p1 = t->screen_p1;
 		v3 p2 = t->screen_p2;
@@ -166,8 +327,9 @@ THREAD_WORK_FUNC(render_tile_work)
 
         float one_over_area = 1.f / edge(p0, p1, p2);
 
-		v3 normal = noz(cross(t->p1 - t->p0, t->p2 - t->p0));
-
+        v3 w = cross(tp1 - tp0, tp2 - tp0);
+		v3 normal = noz(w);
+        w /= dot(w, w);
 
 
 		int min_x = t->min_x;
@@ -190,10 +352,12 @@ THREAD_WORK_FUNC(render_tile_work)
 					v2 poffset = game->samples_offset[sample];
 
 					v3 b;
+
+	 				 v3 pixel_p = V3(x + poffset.x, y + poffset.y, 0);
 					{
 	
+                        v3 p = pixel_p - p0;
 #if 1
-	 				   v3 p = V3(x + poffset.x, y + poffset.y, 0) - p0;
 	 				   float alpha = p.x * v.y * det + p.y * (-v.x) * det;
 	 				   float beta = p.x * (-u.y) * det + p.y * u.x * det;
 	
@@ -213,8 +377,25 @@ THREAD_WORK_FUNC(render_tile_work)
 #endif
 					}
 		    	    {
-						float z = b.w * p0.z + b.u * p1.z + b.v * p2.z;
-		
+
+                         v3 p;
+
+                        {
+                            v3 film_p = V3(((pixel_p.x  / game->width)  - 0.5f) * game->film_width,
+                                      ((1 - pixel_p.y  / game->height) - 0.5f) * game->film_height,
+                                    -game->near_clip_plane);
+
+                            float t = ray_intersect_plane(normal, -dot(tp0, normal), film_p, film_p);
+
+
+                            p = film_p + t * (film_p);
+                        }
+
+
+						//float z = b.w * p0.z + b.u * p1.z + b.v * p2.z;
+		                
+                        float z = -p.z;
+
 						int buffer_index = y * game->width * SAMPLES_PER_PIXEL + x * SAMPLES_PER_PIXEL + sample;
 						if (z < game->zbuffer[buffer_index])
 						{
@@ -224,16 +405,26 @@ THREAD_WORK_FUNC(render_tile_work)
 							// and check if uv are still ok after clipping
 
 
-							v3 p = b.w * t->p0 + b.u * t->p1 + b.v * t->p2;
-							v2 uv = b.w * t->uv0 + b.u * t->uv1 + b.v * t->uv2;
+                            {
+                                v3 p_rel = p - tp0;
+
+                                float alpha = dot(w, cross(p_rel, tp2 - tp0));
+                                float beta = dot(w, cross(tp1 - tp0, p_rel));
+
+                                b = {alpha, beta, 1 - alpha - beta};
+                            }
+
+	//						v3 p = b.w * t->p0 + b.u * t->p1 + b.v * t->p2;
+	
+                            v2 uv = b.w * t->uv0 + b.u * t->uv1 + b.v * t->uv2;
 
 
 							v3 c = t->color;
 
 							if (t->texture)
 							{
-						//		u.x = u.x - floorf(u.x);
-						//		u.y = u.y - floorf(u.y);
+								u.x = u.x - floorf(u.x);
+								u.y = u.y - floorf(u.y);
 
 								// TODO: bilinear filtering
 								int x = uv.x * t->texture->width;
@@ -245,17 +436,17 @@ THREAD_WORK_FUNC(render_tile_work)
 								uint32_t tex = *(t->texture->pixels + y * t->texture->width + x);
 
 
-								c *= u32_to_v3_01(tex);
+	//							c *= u32_to_v3_01(tex);
 							}
 
 #if 1
 								// TODO: this normal is wrong!
-							float light = max(0, dot(noz(game->camera_p - p), normal));
+							float light = max(0, dot(-noz(p), normal));
 #else
 							float light = max(0, dot(noz(V3(0, 0, -10) - p), normal));
 #endif
 		
-							light = 1;
+	//						light = 1;
 						 	c *= light;
 		
 
@@ -278,6 +469,8 @@ THREAD_WORK_FUNC(render_tile_work)
 		}
 
 	}
+    // TODO: ! I don't think we need this, but we might wanna do some stuff about it
+    // also read about deferred rendering
 	for (int y = clip_min_y; y < clip_max_y; y++)
 	{
 		for (int x = clip_min_x; x < clip_max_x; x++)
@@ -418,17 +611,6 @@ void swap(v3 &a, v3 &b)
 	swap(a.y, b.y);
 	swap(a.z, b.z);
 }
-
-float ray_intersect_plane(v3 plane_normal, float d, v3 ray_origin, v3 ray_dir)
-{
-	float denom = dot(ray_dir, plane_normal);
-
-	if (fabsf(denom) < 0.000001f)
-		return -1;
-	
-	return (-d - dot(plane_normal, ray_origin)) / denom;
-}
-
 // TODO: make this multithreaded
 
 struct DrawTriangleData
@@ -849,7 +1031,7 @@ extern "C" void game_update_and_render(Game *game)
 			for (int y = 0; y < y_count; y++)
 			{
 				float r = 0.2;
-				v3 p = V3((x * r * 2.001 - CUBES_WIDTH * 0.5f * r * 2.001), y * r * 2.01f, -z * r * 2.001) + cubes_offset;
+				v3 p = V3((x * r * 1.98 - CUBES_WIDTH * 0.5f * r * 2.001), y * r * 1.98f, -z * r * 1.98) + cubes_offset;
 				v3 color = lerp(V3(0.2, 0.8, 0.3), V3(0.1, 0.9, 0.7), game->cubes_height[z][x]);
     			draw_cube(game, p, rotation, 0.2, V3(1, 1, 1), &game->grass_top_tex, &game->grass_tex);
 			}

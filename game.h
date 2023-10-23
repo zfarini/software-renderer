@@ -35,7 +35,7 @@
 #define TILES_PER_HEIGHT 16
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
 
-#define CORE_COUNT (4)
+#define CORE_COUNT (8)
 #define CUBES_WIDTH 100
 #define CUBES_HEIGHT 100
 
@@ -73,15 +73,25 @@ typedef struct
 
 	v3 screen_p0, screen_p1, screen_p2;
 
+    v3 n0, n1, n2;
+
 	v2 uv0, uv1, uv2;
 
 	int min_x, min_y, max_x, max_y;
 
 	Texture *texture;
 	v3 color;
-
 } Triangle;
 
+
+typedef struct
+{
+    Triangle *triangles;
+    int triangle_count;
+    v3 rotation;
+    v3 position;
+    v3 scale;
+} Mesh;
 
 typedef struct
 {
