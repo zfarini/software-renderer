@@ -26,7 +26,7 @@ typedef struct
 #define internal static
 #endif
 
-internal float lerp(float a, float b, float t)
+internal float lerp(float a, float t, float b)
 {
 	return (1 - t) * a + t * b;
 }
@@ -113,12 +113,12 @@ internal float length(v3 a)
     return sqrtf(dot(a, a));
 }
 
-internal v3 lerp(v3 a, v3 b, float t)
+internal v3 lerp(v3 a, float t, v3 b)
 {
 	return {
-		a.x * (1 - t) + b.x * t,
-		a.y * (1 - t) + b.y * t,
-		a.z * (1 - t) + b.z * t
+		lerp(a.x, t, b.x),
+		lerp(a.y, t, b.y),
+		lerp(a.z, t, b.z)
 	};
 }
 
@@ -186,6 +186,14 @@ internal v2 noz(v2 a)
 	if (len <= 0.00001f)
 		return (v2){};
     return a / len;
+}
+
+internal v2 lerp(v2 a, float t, v2 b)
+{
+	return {
+		lerp(a.x, t, b.x),
+		lerp(a.y, t, b.y),
+	};
 }
 
 internal v3 operator*(m3x3 m, v3 v)

@@ -25,17 +25,22 @@
 #include "math.h"
 
 
+#define BILINEAR_FILTERING 0
+
 #define MAX_SAMPLES_PER_PIXEL (32)
-#define SAMPLES_PER_PIXEL (1)
+#define SAMPLES_PER_PIXEL (4)
+
+
+#define THREADS 1
 
 #define MAX_TRIANGLE_COUNT (6000000)
 #define TILES_PER_WIDTH 32
 #define TILES_PER_HEIGHT 32
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
 
-#define CORE_COUNT (8)
-#define CUBES_WIDTH 20
-#define CUBES_HEIGHT 20
+#define CORE_COUNT (4)
+#define CUBES_WIDTH 1
+#define CUBES_HEIGHT 1
 
 #define MAX_TRIANGLE_COUNT_PER_TILE (MAX_TRIANGLE_COUNT)
 
@@ -107,6 +112,7 @@ typedef struct
 	float last_frame_time;
 
 	v3 camera_p, camera_rotation, camera_x, camera_y, camera_z;
+	v3 camera_dp;
 	m3x3 camera_inv_rotation_mat, camera_rotation_mat;
 	float fov;
 	float near_clip_plane;
@@ -142,6 +148,7 @@ typedef struct
 	Texture grass_tex;
 	Texture grass_top_tex;
     Texture starwars_tex;
+	Texture head_tex;
 
 	ThreadWork *curr_thread_work;
 

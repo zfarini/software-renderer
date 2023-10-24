@@ -500,67 +500,24 @@ THREAD_WORK_FUNC(render_tile_work)
 								uv.y = uv.y - floorf(uv.y);
 
 								// TODO: bilinear filtering
-								
-								float tx = uv.x * t->texture->width;
-								float ty = uv.y * t->texture->height;
-
-								float fx =  tx - floorf(tx);
-								float fy = ty - floorf(ty);
-
-								int x = tx, y = ty;
+								int x = uv.x * t->texture->width;
+								int y = uv.y * t->texture->height;
 
 								if (x >= t->texture->width) x = t->texture->width - 1;
 								if (y >= t->texture->height) y = t->texture->height - 1;
                                 if (x < 0) x = 0;
                                 if (y < 0) y = 0;
 
+								uint32_t tex = *(t->texture->pixels + y * t->texture->width + x);
 
-								uint32_t t00 = *(t->texture->pixels + (y) * t->texture->width + (x));
 
-								//!!!!TODO: convert from sRGB to linear
-#if BILINEAR_FILTERING
-								uint32_t t01 = t00, t10 = t00, t11 = t00;
-								if (x + 1 < t->texture->width)
-									t01 = *(t->texture->pixels + (y) * t->texture->width + (x + 1));
-								if (y + 1 < t->texture->height)
-									t10 = *(t->texture->pixels + (y + 1) * t->texture->width + (x));
-								if (x + 1 < t->texture->width && y + 1 < t->texture->height)
-									t11 = *(t->texture->pixels + (y + 1) * t->texture->width + (x + 1));
+								c *= u32_to_v3_01(tex);
+								v3 c0 = V3(1, 0, 0);
+								v3 c1 = V3(0, 1, 0);
+								v3 c2 = V3(0, 0, 1);
+								//c = b.w * c0 + b.u * c1 + b.v * c2;
 
-								v3 tex = lerp(lerp(u32_to_v3_01(t00), fx, u32_to_v3_01(t01)),
-											fy,
-											lerp(u32_to_v3_01(t10), fx, u32_to_v3_01(t11)));
-#else
-								v3 tex = u32_to_v3_01(t00);
-#endif
-#if 1
-								
-
-#endif
-								c *= tex;
-
-							}
-							else
-
-							{
-//                        		const int M = 10;
-//                        		float checker = (fmod(uv.x * M, 1.0) > 0.5) ^ (fmod(uv.y * M, 1.0) < 0.5);
-//                        		float d = 0.3 * (1 - checker) + 0.7 * checker;
-//
-	//							c *= d;
-#if 0
-								v3 t = V3(.7, .7, .7);
-
-								float size = 0.2f;
-
-								v3 pw = camera_to_world(game, p);
-								
-								int v = (int)roundf(pw.x / size) + (int)roundf(pw.z / size);//(int)(pw.x / size) + (int)(0 / size);
-								if (((v >= 0) && v % 2 == 0) || ((v < 0 ) && (-v) % 2 == 0))
-									t = V3(0, 0, 0);
-
-								c *= t;
-#endif
+							//	c = c0 + uv.x * (c1 - c0) + uv.y * (c2 - c0);
 							}
 
 #if 1
@@ -569,13 +526,14 @@ THREAD_WORK_FUNC(render_tile_work)
 							float light = max(0, dot(noz(V3(0, 0, -10) - p), normal));
 #endif
 		
-						 	c *= light;
+	//					 	c *= light;
 		
 	    	   				uint32_t color32 = ((uint32_t)(c.r * 255 + 0.5f) << 24) |
 	    	   				         	       ((uint32_t)(c.g * 255 + 0.5f) << 16) |
 	    	   				         	       ((uint32_t)(c.b * 255 + 0.5f) << 8);
 	    	   				game->pixels_aa[buffer_index] = color32;
 						}
+
     	        	}
 				}
     	    }
@@ -600,11 +558,10 @@ THREAD_WORK_FUNC(render_tile_work)
 								   (c >> 8) & 0xFF) / 255.f;
 			}
 			color /= SAMPLES_PER_PIXEL;
-			// TODO: linear to sRGB
 			game->pixels[y * game->width + x] = 
-	    	   				 ((uint32_t)((color.r) * 255 + 0.5f) << 24) |
-	    	   				 ((uint32_t)((color.g) * 255 + 0.5f) << 16) |
-	    	   				 ((uint32_t)((color.b) * 255 + 0.5f) << 8);
+	    	   				 ((uint32_t)(color.r * 255 + 0.5f) << 24) |
+	    	   				 ((uint32_t)(color.g * 255 + 0.5f) << 16) |
+	    	   				 ((uint32_t)(color.b * 255 + 0.5f) << 8);
 		}
 	}
 	work->finished = 1;
@@ -732,23 +689,49 @@ THREAD_WORK_FUNC(draw_triangle_work)
 
 	for (int i = 0; i < data->triangle_count; i++)
 	{
+
 		Triangle *triangle = &data->triangles[i];
+
+		v3 tp0 = triangle->p0;
+		v3 tp1 = triangle->p1;
+		v3 tp2 = triangle->p2;
 
 		Triangle triangles[2];
 		int triangle_count = 0;
 	
-		v3 cp0 = world_to_camera(game, triangle->p0);
-		v3 cp1 = world_to_camera(game, triangle->p1);
-		v3 cp2 = world_to_camera(game, triangle->p2);
+		//TODO: transform points by camera
+		v3 cp0 = world_to_camera(game, tp0);
+		v3 cp1 = world_to_camera(game, tp1);
+		v3 cp2 = world_to_camera(game, tp2);
 		
 	
-		int d0 = cp0.z > -game->near_clip_plane;
-		int d1 = cp1.z > -game->near_clip_plane;
-		int d2 = cp2.z > -game->near_clip_plane;
+		v3 normal = noz(cross(cp1 - cp0, cp2 - cp0));
+	
+	
+		v3 plane_normal = V3(0, 0, -1);
+		float plane_d = -game->near_clip_plane;
+	
+		Triangle t = {cp0, cp1, cp2};
+	
+		// 1 -> are you on the clipped side
+		int d0 = cp0.z > plane_d;
+		int d1 = cp1.z > plane_d;
+		int d2 = cp2.z > plane_d;
 	
 		if (d0 + d1 + d2 == 0)
 		{
 			triangles[triangle_count++] = Triangle{.p0 = cp0, .p1 = cp1, .p2 = cp2, .uv0 = triangle->uv0, .uv1 = triangle->uv1, .uv2 = triangle->uv2};
+		}
+		else if (d0 + d1 + d2 == 2)
+		{
+			/*
+					  p2
+
+				---x0----x1-- (clip plane)
+						
+				 p0         p1
+			*/
+
 		}
 		else if (d0 + d1 + d2 != 3)
 		{
@@ -764,40 +747,108 @@ THREAD_WORK_FUNC(draw_triangle_work)
 			v3 p0 = cp0, p1 = cp1, p2 = cp2;
 			v2 uv0 = triangle->uv0, uv1 = triangle->uv1, uv2 = triangle->uv2;
 
-			if ((clip_up && !d0) || (!clip_up && d0))
-				swap(p0, p2), swap(uv0, uv2);
-			else if ((clip_up && !d1) || (!clip_up && d1))
-				swap(p1, p2), swap(uv1, uv2);
-
-			v3 x0 = p2 - ((game->near_clip_plane + p2.z) / (p0.z - p2.z)) * (p0 - p2);
-			v3 x1 = p2 - ((game->near_clip_plane + p2.z) / (p1.z - p2.z)) * (p1 - p2);
-
-			v2 x0_uv = lerp(uv0, length(x0 - p0) / length(p2 - p0), uv2);
-			v2 x1_uv = lerp(uv1, length(x1 - p1) / length(p2 - p1) , uv2);
-
 			if (clip_up)
 			{
+				if (!d0)
+					swap(p0, p2), swap(uv0, uv2);
+				else if (!d1)
+					swap(p1, p2), swap(uv1, uv2);
+
+				v3 x0 = p2 - ((game->near_clip_plane + p2.z) / (p0.z - p2.z)) * (p0 - p2);
+				v3 x1 = p2 - ((game->near_clip_plane + p2.z) / (p1.z - p2.z)) * (p1 - p2);
+
+				uv0 = lerp(uv0, length(x0 - p0) / length(p2 - p0), uv2);
+				uv1 = lerp(uv1, length(x1 - p1) / length(p2 - p1) , uv2);
+
+				if (dot(normal, noz(cross(x0 - p2, x1 - p2))) < 0)
+				{
+					swap(x0, x1);
+					swap(uv0, uv1);
+				}
 				triangles[triangle_count++] = Triangle{.p0 = p2, .p1 = x0, .p2 = x1,
-						.uv0 = uv2, .uv1 = x0_uv, .uv2 = x1_uv};
+										.uv0 = uv2, .uv1 = uv0, .uv2 = uv1};
 			}
 			else
 			{
-				triangles[triangle_count++] = {.p0 = p0, .p1 = p1, .p2 = x0,
-						.uv0 = uv0, .uv1 = uv1, .uv2 = x0_uv};
-				triangles[triangle_count++] = {.p0 = p1, .p1 = x1, .p2 = x0,
-						.uv0 = uv1, .uv1 = x1_uv, .uv2 = x0_uv};
-			}
+				if (d0)
+					swap(p0, p2), swap(uv0, uv2);
+				else if (d1)
+					swap(p1, p2), swap(uv1, uv2);
 
-			v3 normal = cross(cp1 - cp0, cp2 - cp0);
-			for (int i = 0; i < triangle_count; i++)
-			{
-				if (dot(normal, cross(triangles[i].p1 - triangles[i].p0,
-									  triangles[i].p2 - triangles[i].p0)) < 0)
+				v3 x0 = p2 - ((game->near_clip_plane + p2.z) / (p0.z - p2.z)) * (p0 - p2);
+				v3 x1 = p2 - ((game->near_clip_plane + p2.z) / (p1.z - p2.z)) * (p1 - p2);
+				
+				v2 x0_uv = lerp(uv0, length(x0 - p0) / length(p2 - p0), uv2);
+				v2 x1_uv = lerp(uv1, length(x1 - p1) / length(p2 - p1) , uv2);
+				// p0, p1, x0
 				{
-					swap(triangles[i].p1, triangles[i].p2);
-					swap(triangles[i].uv1, triangles[i].uv2);
+					triangles[triangle_count++] = {.p0 = p0, .p1 = p1, .p2 = x0,
+										.uv0 = uv0, .uv1 = uv1, .uv2 = x0_uv};
+				}
+				// p1, x1, x0
+				{
+					triangles[triangle_count++] = {.p0 = p1, .p1 = x1, .p2 = x0,
+										.uv0 = uv1, .uv1 = x1_uv, .uv2 = x0_uv};
 				}
 			}
+#if 0
+
+			// TODO: simplify this 
+			float t0 = ray_intersect_plane(plane_normal, plane_d, cp0, cp2 - cp0);	
+			v3 x0 = cp0 + t0 * (cp2 - cp0);
+			
+			float t1 = ray_intersect_plane(plane_normal, plane_d, cp1, cp2 - cp1);	
+			v3 x1 = cp1 + t1 * (cp2 - cp1);
+		
+			float t2 = ray_intersect_plane(plane_normal, plane_d, cp0, cp1 - cp0);	
+			v3 x2 = cp0 + t2 * (cp1 - cp0);
+		
+			if (t0 > 1) t0 = -1;
+			if (t1 > 1) t1 = -1;
+			if (t2 > 1) t2 = -1;
+		
+		
+			int swap1 = 0, swap2 = 0;
+
+			if (t0 < 0)
+				swap(x0, x2), swap1 = 1;
+			if (t1 < 0)
+				swap(x1, x2), swap2 = 1;
+	
+		
+		
+				v3 p0, p1;
+		
+			if (d0) p0 = cp1, p1 = cp2;
+			else if (d1) p0 = cp0, p1 = cp2;
+			else if (d2) p0 = cp0, p1 = cp1;
+		
+			/*
+				p0   p1
+		
+			   	x0   x1
+			*/
+			// in case p1 was in the "left" of p0
+			if (dot(noz(p1 - x0), noz(x1 - x0)) < dot(noz(p0 - x0), noz(x1 - x0)))
+				swap(p0, p1);
+		
+		
+				//	x0 -= V3(0, 0, 0.01f);
+				//	x1 -= V3(0, 0, 0.01f);
+					
+			{
+				Triangle t0 = {x0, x1, p1};
+				Triangle t1 = {x0, p1, p0};
+			
+				if (dot(normal, noz(cross(t0.p1 - t0.p0, t0.p2 - t0.p0))) < 0)
+					swap(t0.p1, t0.p2);
+				if (dot(normal, noz(cross(t1.p1 - t1.p0, t1.p2 - t1.p0))) < 0)
+					swap(t1.p1, t1.p2);
+			
+				triangles[triangle_count++] = t0;
+				triangles[triangle_count++] = t1;
+			}
+#endif
 		}
 #if 1
 		for (int i = 0; i < triangle_count; i++)
@@ -1082,7 +1133,7 @@ extern "C" void game_update_and_render(Game *game)
 		assert(game->triangles && game->thread_work && game->zbuffer && game->pixels_aa);
 
         game->camera_p = (v3){0, 1, 8};
-       game->camera_p = (v3){0, 0, 0};
+       game->camera_p = (v3){};
 
         game->film_width = tan((game->fov*0.5f) * DEG_TO_RAD) * 2 * game->near_clip_plane;
         game->film_height = game->film_width * ((float)game->height / game->width);
@@ -1190,45 +1241,21 @@ extern "C" void game_update_and_render(Game *game)
 	{
 		Triangle t = {};
 
-		t.p0 = V3(-1000, -1, 1000);
-		t.p1 = V3(1000, -1, 1000);
-		t.p2 = V3(1000, -1, -1000);
-		t.uv0 = V2(0, 0);
-		t.uv1 = V2(1, 0);
-		t.uv2 = V2(1, 1);
-		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
-		t.color = V3(.6, .6, .6);
-		draw_triangle(game, &t);
-	}
-	{
-		Triangle t = {};
-
-		t.p0 = V3(-1000, -1, 1000);
-		t.p1 = V3(1000, -1, -1000);
-		t.p2 = V3(-1000, -1, -1000);
-		t.uv0 = V2(0, 0);
-		t.uv1 = V2(1, 1);
-		t.uv2 = V2(0, 1);
-		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
-		t.color = V3(.6, .6, .6);
-		draw_triangle(game, &t);
-	}
-	{
-		Triangle t = {};
-
-		t.p0 = V3(0, 1, -2);
-		t.p1 = V3(1, 1, -2);
-		t.p2 = V3(.5, 2, -2);
+		t.p0 = V3(-1, 0, -2);
+		t.p1 = V3(1, 0, -2);
+		t.p2 = V3(0, 2, -2);
 		t.uv0 = V2(0, 0);
 		t.uv1 = V2(1, 0);
 		t.uv2 = V2(0, 1);
 		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
-		t.color = V3(0.5, 0.5, 0.5);
+		t.texture = &game->head_tex;
+		t.color = V3(1, 1, 1);
 		draw_triangle(game, &t);
+
 	}
 	// draw_mesh(game, &game->monkey_mesh, V3(-2, 5, -2), V3(1, 1, 1), V3(game->time * 2, 0, 0), V3(0.8, 0.4, 0.2));
 
-    draw_mesh(game, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
+ //   draw_mesh(game, &game->cow_mesh, V3(3, 5, -2), V3(2, 2, 2), V3(game->time, game->time, game->time));
     
     game->animation_time += DT;
 
@@ -1236,8 +1263,7 @@ extern "C" void game_update_and_render(Game *game)
 
 	clock_gettime(CLOCK_MONOTONIC, &time_end);
 	game->last_frame_time = (time_end.tv_sec - time_start.tv_sec) * 1000.0 + (time_end.tv_nsec - time_start.tv_nsec) / 1000000.0;
-	if (game->frame)
-		game->total_time += game->last_frame_time;
+	game->total_time += game->last_frame_time;
     game->time += DT;
 	game->frame++;
 }

@@ -32,6 +32,7 @@ int main(void)
 
 	int relative_mouse_mode = 0;
 
+
     SDL_Init(SDL_INIT_VIDEO);
 
     SDL_Window *window = SDL_CreateWindow("texor", 0, 0,
@@ -39,6 +40,7 @@ int main(void)
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
 
 
+	SDL_SetRelativeMouseMode((SDL_bool)0);
 #if CODE_RELOADING
     const char *dll_name = "game.so";
     time_t dll_last_write_time = get_last_write_time(dll_name);
@@ -77,10 +79,13 @@ int main(void)
 	int mouse_x, mouse_y;
 	SDL_GetMouseState(&mouse_x, &mouse_y);
 
+	int is_pressed[256] = {};
+	int was_pressed[256];
+
 	while (!game->should_quit)
 	{
 #if CODE_RELOADING
-        {
+        { // TODO: kill threads and reload their function??
             time_t wt = get_last_write_time(dll_name);
             if (wt != dll_last_write_time)
             {
@@ -97,6 +102,9 @@ int main(void)
         }
 #endif
 
+		for (int i = 0; i < ARRAY_LENGTH(was_pressed); i++)
+			was_pressed[i] = is_pressed[i];
+
 		SDL_Event ev;
 		while (SDL_PollEvent(&ev))
         {
@@ -107,44 +115,9 @@ int main(void)
                 int is_down = (ev.type == SDL_KEYDOWN);
 
                 SDL_Keycode keycode = ev.key.keysym.sym;
-				if (is_down)
-				{
-					float dx = 0.4f;
 
-                	if (keycode == SDLK_ESCAPE)
-                	    game->should_quit = 1;
-					else if (keycode == SDLK_w)
-						game->camera_p += +dx * game->camera_z;
-					else if (keycode == SDLK_a)
-						game->camera_p += -dx * game->camera_x;
-					else if (keycode == SDLK_s)
-						game->camera_p += -dx * game->camera_z;
-					else if (keycode == SDLK_d)
-						game->camera_p += +dx * game->camera_x;
-					else if (keycode == SDLK_q)
-						game->camera_p += +dx * game->camera_y;
-					else if (keycode == SDLK_e)
-						game->camera_p += -dx * game->camera_y;
-					else if (keycode == SDLK_SPACE)
-					{
-						relative_mouse_mode = !relative_mouse_mode;
-						SDL_SetRelativeMouseMode((SDL_bool)!SDL_GetRelativeMouseMode());
-					}
-					else if (keycode == SDLK_i)
-					{
-						game->go_in = 1;
-					}
-					else if (keycode == SDLK_o)
-						game->go_back = 1;
-				}
-				else
-				{
-					if (keycode == SDLK_i)
-						game->go_in = 0;
-					else if (keycode == SDLK_o)
-						game->go_back = 0;
-				}
-
+				if (keycode < ARRAY_LENGTH(is_pressed))
+					is_pressed[keycode] = is_down;
 			}
         	else if (ev.type == SDL_MOUSEBUTTONDOWN || ev.type == SDL_MOUSEBUTTONUP)
         	{
@@ -164,6 +137,34 @@ int main(void)
 
 
 		}
+		float dx = 7;
+
+		game->camera_dp = V3(0, 0, 0);
+
+         if (is_pressed[SDLK_ESCAPE])
+             game->should_quit = 1;
+		 if (is_pressed[SDLK_w])
+		 	game->camera_dp += +dx * game->camera_z;
+		 if (is_pressed[SDLK_a])
+		 	game->camera_dp += -dx * game->camera_x;
+		 if (is_pressed[SDLK_s])
+		 	game->camera_dp += -dx * game->camera_z;
+		 if (is_pressed[SDLK_d])
+		 	game->camera_dp += +dx * game->camera_x;
+		 if (is_pressed[SDLK_q])
+		 	game->camera_dp += +dx * game->camera_y;
+		 if (is_pressed[SDLK_e])
+			game->camera_dp += -dx * game->camera_y;
+		 if (is_pressed[SDLK_r])
+			 game->camera_rotation.z += 0.01f * PI;
+		 if (is_pressed[SDLK_f])
+			 game->camera_rotation.z -= 0.01f * PI;
+		 if (is_pressed[SDLK_SPACE] && !was_pressed[SDLK_SPACE])
+		 {
+		 	relative_mouse_mode = !relative_mouse_mode;
+		 	SDL_SetRelativeMouseMode((SDL_bool)!SDL_GetRelativeMouseMode());
+		 }
+			
 		game_update_and_render(game);
 		
 		{
