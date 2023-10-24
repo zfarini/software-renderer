@@ -149,6 +149,7 @@ typedef struct
 	Texture grass_top_tex;
     Texture starwars_tex;
 	Texture head_tex;
+	Texture checkerboard_tex;
 
 	ThreadWork *curr_thread_work;
 

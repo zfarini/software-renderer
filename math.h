@@ -26,6 +26,12 @@ typedef struct
 #define internal static
 #endif
 
+
+internal float square(float a)
+{
+	return a * a;
+}
+
 internal float lerp(float a, float t, float b)
 {
 	return (1 - t) * a + t * b;
@@ -155,6 +161,11 @@ internal v2 operator-(v2 a, v2 b)
     return {a.x - b.x, a.y - b.y};
 }
 
+internal v2 operator*(v2 a, v2 b)
+{
+    return {a.x * b.x, a.y * b.y};
+}
+
 internal v2 operator*(v2 a, float b)
 {
     return {a.x * b, a.y * b};
@@ -168,6 +179,31 @@ internal v2 operator*(float b, v2 a)
 internal v2 operator/(v2 a, float b)
 {
     return a * (1.f / b);
+}
+
+internal v2 &operator+=(v2 &a, v2 b)
+{
+	return a = a + b;
+}
+
+internal v2 &operator-=(v2 &a, v2 b)
+{
+	return a = a - b;
+}
+
+internal v2 &operator*=(v2 &a, v2 b)
+{
+	return a = a * b;
+}
+
+internal v2 &operator*=(v2 &a, float b)
+{
+	return a = a * b;
+}
+
+internal v2 &operator/=(v2 &a, float b)
+{
+	return a = a / b;
 }
 
 internal float dot(v2 a, v2 b)
@@ -286,4 +322,8 @@ internal v3 rotate(v3 v, v3 rot)
 	return v;
 }
 
+internal v3 reflect(v3 a, v3 n)
+{
+	return a - 2 * dot(a, n) * n;
+}
 #endif
