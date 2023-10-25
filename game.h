@@ -106,7 +106,9 @@ typedef struct
 	v3 P, dP, ddP;
 
 	volatile _Atomic int triangle_count;
+	volatile _Atomic int triangle_count2;
 	Triangle *triangles;
+	Triangle *triangles2;
 
 	int should_quit;
 	float last_frame_time;
@@ -146,7 +148,7 @@ typedef struct
 	volatile _Atomic int next_thread_index;
 
 	v3 light_p;
-	v3 light_rotation;
+	v3 light_dir;
 
 	int shadow_map_width;
 	int shadow_map_height;

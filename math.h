@@ -262,6 +262,15 @@ internal m3x3 operator*(m3x3 a, m3x3 b)
 	return res;
 }
 
+internal m3x3 m3x3_columns(v3 a, v3 b, v3 c)
+{
+	return m3x3{{
+		a.x, b.x, c.x,
+		a.y, b.y, c.y,
+		a.z, b.z, c.z
+	}
+	};
+}
 internal m3x3 transpose(m3x3 m)
 {
     m3x3 res;
