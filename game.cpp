@@ -539,7 +539,7 @@ THREAD_WORK_FUNC(render_tile_work)
 								+ V3(specular, specular, specular);
 						
 						// should specular also be multiplied?
-						c = texture_color * t->color;
+						c *= texture_color * t->color;
 		
 						{
 
@@ -570,7 +570,7 @@ THREAD_WORK_FUNC(render_tile_work)
 									in_shadow = 0;
 							}
 							if (in_shadow)
-								c *= 0.2;
+								c *= 0.4;
 						}
 
 						
@@ -734,11 +734,12 @@ void render_shadow_map(Game *game)
 
 
 	float near_clip_plane = 0.125f;
-	float far_clip_plane = 10;
+	float far_clip_plane = 1000;
 	float fov = 60;
 
+	// TODO: we need to use near_clip_plane also fix width 
     float film_width = tan((fov*0.5f) * DEG_TO_RAD) * 2 * near_clip_plane;
-	film_width = 10;
+	film_width = 20;
     float film_height = film_width * ((float)shadow_map_height / shadow_map_width);
 	
 	game->shadow_map_top = film_height * 0.5f;
@@ -1138,7 +1139,9 @@ void draw_triangles(Game *game)
 	{
 		Triangle *triangle = &game->triangles[i];
 
-
+		// TODO: check this
+		if (dot(cross(triangle->p1 - triangle->p0, triangle->p2 - triangle->p0), triangle->p0 - game->camera_p) >= 0)
+			continue ;
 		
 		Triangle triangles[2];
 		int triangle_count = 0;
@@ -1147,8 +1150,7 @@ void draw_triangles(Game *game)
 		v3 cp1 = world_to_camera(game, triangle->p1);
 		v3 cp2 = world_to_camera(game, triangle->p2);
 		
-	//	if (dot(cross(cp1 - cp0, cp2 - cp0), V3(0, 0, -1)) >= 0)
-	//		continue ;
+
 	
 		int d0 = cp0.z > -game->near_clip_plane;
 		int d1 = cp1.z > -game->near_clip_plane;
