@@ -145,11 +145,24 @@ typedef struct
 	ThreadWork *thread_work; // this should loop
 	volatile _Atomic int next_thread_index;
 
+	v3 light_p;
+	v3 light_rotation;
+
+	int shadow_map_width;
+	int shadow_map_height;
+	float shadow_map_left;
+	float shadow_map_right;
+	float shadow_map_top;
+	float shadow_map_bottom;
+
+	m3x3 light_inv_rot_matrix;
+	float *shadow_map;
+
 	Texture grass_tex;
 	Texture grass_top_tex;
     Texture starwars_tex;
-	Texture head_tex;
 	Texture checkerboard_tex;
+	Texture ground_tex;
 
 	ThreadWork *curr_thread_work;
 
@@ -157,6 +170,8 @@ typedef struct
     Mesh cow_mesh;
     Mesh monkey_mesh;
     Mesh starwars_mesh;
+	Mesh african_head_mesh;
+	Texture african_head_tex;
 
     Mesh starwars_animation[116];
     float animation_time;

@@ -47,22 +47,11 @@ int main(void)
     void *dll = dlopen(dll_name, RTLD_LAZY);
     GameUpdateAndRenderFn *game_update_and_render = (GameUpdateAndRenderFn *)
             dlsym(dll, "game_update_and_render");
-	GameThreadWorkFn *game_thread_work = (GameThreadWorkFn *)
-			dlsym(dll, "game_thread_work");
-
     assert(dll);
     assert(game_update_and_render);
 
 #endif
 
-#if THREADS
-	 for (int i = 1; i < CORE_COUNT; i++)
-	 {
-		 pthread_t thread;
-		 pthread_create(&thread, 0, game_thread_work, game);
-	}
-#endif
-    
     SDL_SetWindowMinimumSize(window, game->width, game->height);
     //TODO: should these takes window or back_buffer width/height
     SDL_RenderSetLogicalSize(renderer, game->width, game->height);
@@ -89,6 +78,7 @@ int main(void)
             time_t wt = get_last_write_time(dll_name);
             if (wt != dll_last_write_time)
             {
+				printf("updating dll...\n");
                 dll_last_write_time = wt;
                 dlclose(dll);
                 dll = dlopen(dll_name, RTLD_LAZY);

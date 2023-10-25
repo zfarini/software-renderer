@@ -27,6 +27,20 @@ void swap(v2 &a, v2 &b)
 	swap(a.y, b.y);
 }
 
+v3 ortho_project_to_screen(v3 p, v3 cam_p, m3x3 cam_inv_rot_matrix, float left, float right, float bottom, float top,
+							int screen_width, int screen_height)
+{
+	p = cam_inv_rot_matrix * (p - cam_p);
+
+    p.x = 2 * p.x / (right - left) - (right + left) / (right - left);
+	p.y = 2 * p.y / (top - bottom) - (top + bottom) / (top - bottom);
+	p.x = (p.x + 1) * 0.5f * screen_width;
+	p.y = (1 - p.y) * 0.5f * screen_height;
+	p.z *= -1;
+
+	return p;
+}
+
 void read_vertex(char **line, int *f)
 {
     int i = 0;
@@ -278,8 +292,12 @@ v3 world_to_camera(Game *game, v3 p)
 
 v3 camera_to_world(Game *game, v3 p)
 {
-	return game->camera_rotation_mat * (p) + game->camera_p;
+	return game->camera_rotation_mat * p + game->camera_p;
 }
+
+
+
+
 
 v3 project_to_screen(Game *game, v3 p)
 {
@@ -443,17 +461,12 @@ THREAD_WORK_FUNC(render_tile_work)
 
                         v2 uv = uv0 * w0 + uv1 * w1 + uv2 * w2;
 
-	//					uv *= z;
-
-                         // TODO: why does this not work?
-						v3 c = t->color;
-
+						v3 texture_color = V3(1, 1, 1);
 						if (t->texture)
 						{
 							uv.x = uv.x - floorf(uv.x);
 							uv.y = uv.y - floorf(uv.y);
 
-							// TODO: bilinear filtering
 							
 							float tx = uv.x * t->texture->width;
 							float ty = uv.y * t->texture->height;
@@ -481,13 +494,12 @@ THREAD_WORK_FUNC(render_tile_work)
 							if (x + 1 < t->texture->width && y + 1 < t->texture->height)
 								t11 = *(t->texture->pixels + (y + 1) * t->texture->width + (x + 1));
 
-							v3 tex = lerp(lerp(u32_to_v3_01(t00), fx, u32_to_v3_01(t01)),
+							texture_color = lerp(lerp(u32_to_v3_01(t00), fx, u32_to_v3_01(t01)),
 										fy,
 										lerp(u32_to_v3_01(t10), fx, u32_to_v3_01(t11)));
 #else
-							v3 tex = u32_to_v3_01(t00);
+							texture_color = u32_to_v3_01(t00);
 #endif
-							c *= tex;
 						}
 						else
 						{
@@ -498,23 +510,65 @@ THREAD_WORK_FUNC(render_tile_work)
 							c *= d;
 #endif
 						}
-
+						
+						// TODO: there is a bug if u zoom in the african head mesh
 						v3 n = w0 * n0 + w1 * n1 + w2 * n2;
 
 						v3 ambient = V3(0.52, .8, .9);
 
-						v3 light_p = world_to_camera(game, V3(2, 10, 2));
+						v3 light_p = world_to_camera(game, game->light_p);
+
 						float diffuse = max(0, dot(noz(light_p - p), n));
 						
+						float light_strength = 10;
 
+						ambient = {};
+
+					//	diffuse *= (1.0 / square(length(light_p - p))) * light_strength;
+				
 						v3 reflected = reflect(light_p - p, n);
 						float specular = powf(max(0, dot(noz(reflected), noz(p))), 10);
 
-						//light *= (1.0 / square(length(light_p - p))) * 100;
+						v3 c =  (ambient  + V3(diffuse, diffuse, diffuse)* 0.8)
+								+ V3(specular, specular, specular);
+						
+						// should specular also be multiplied?
+						c = texture_color * t->color;
 		
+						{
 
-						c *= ambient * 0.2 + V3(diffuse, diffuse, diffuse) * 0.8 + V3(specular, specular, specular);
-		
+							bool in_shadow = 1;
+
+							v3 world_p = w0 * t->p0 + w1 * t->p1 + w2 * t->p2;
+
+							v3 sp = ortho_project_to_screen(world_p, game->light_p, game->light_inv_rot_matrix,
+											game->shadow_map_left,
+											game->shadow_map_right,
+											game->shadow_map_bottom,
+											game->shadow_map_top,
+											game->shadow_map_width,
+											game->shadow_map_height);
+
+							int sx = sp.x;
+							int sy = sp.y;
+
+							if (sx >= 0 && sx < game->shadow_map_width && sy >= 0 && sy < game->shadow_map_height)
+							{
+
+	//							float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);  
+
+								float sz = game->shadow_map[sy * game->shadow_map_width + sx];
+								if (!(sp.z - 0.5f > sz))
+									in_shadow = 0;
+							}
+							else
+								in_shadow = 0;
+							if (in_shadow)
+								c *= 0.2f;
+						}
+
+						
+						//c = V3(z, z, z) / game->far_clip_plane;
 						if (c.r > 1)
 							c.r = 1;
 						if (c.g > 1)
@@ -638,6 +692,126 @@ void wait_for_all_work_to_finish(Game *game)
 #endif
 }
 
+void render_shadow_map(Game *game)
+{
+	wait_for_all_work_to_finish(game);
+
+	game->light_rotation = game->camera_rotation;
+	game->light_rotation = {-PI / 2, -PI / 2, - PI / 2};
+
+    m3x3 rot_matrix = z_rotation(game->light_rotation.z) * (y_rotation(game->light_rotation.y) * x_rotation(game->light_rotation.x));
+    m3x3 inv_rot_matrix = x_rotation(-game->light_rotation.x) * (y_rotation(-game->light_rotation.y) * z_rotation(-game->light_rotation.z));
+
+	game->light_inv_rot_matrix = inv_rot_matrix;
+
+	int shadow_map_width = game->shadow_map_width;
+	int shadow_map_height = game->shadow_map_height;
+	float *shadow_map = game->shadow_map;
+
+
+	game->light_p = {2, 5, -2};
+
+
+	//game->light_p = game->camera_p;
+
+	v3 light_p = game->light_p;
+
+
+	//v3 light_dir = rot_matrix * V3(0, 0, -1);
+
+	float near_clip_plane = 0.125f;
+	float far_clip_plane = 1000;
+	float fov = 60;
+
+    float film_width = tan((fov*0.5f) * DEG_TO_RAD) * 2 * near_clip_plane;
+	film_width = 10;
+    float film_height = film_width * ((float)shadow_map_height / shadow_map_width);
+	
+	game->shadow_map_top = film_height * 0.5f;
+	game->shadow_map_right = film_width * 0.5f;
+	game->shadow_map_bottom = -game->shadow_map_top;
+	game->shadow_map_left = -game->shadow_map_right;
+
+	for (int y = 0; y < shadow_map_height; y++)
+		for (int x = 0; x < shadow_map_width; x++)
+			shadow_map[y * shadow_map_width + x] = far_clip_plane;
+
+	for (int i = 0; i < game->triangle_count; i++)
+	{
+		Triangle *t = &game->triangles[i];
+
+		v3 p0 = t->p0, p1 = t->p1, p2 = t->p2;
+
+
+		p0 = ortho_project_to_screen(p0, light_p, inv_rot_matrix, game->shadow_map_left, game->shadow_map_right, game->shadow_map_bottom, game->shadow_map_top, shadow_map_width, shadow_map_height);
+		p1 = ortho_project_to_screen(p1, light_p, inv_rot_matrix, game->shadow_map_left, game->shadow_map_right, game->shadow_map_bottom, game->shadow_map_top, shadow_map_width, shadow_map_height);
+		p2 = ortho_project_to_screen(p2, light_p, inv_rot_matrix, game->shadow_map_left, game->shadow_map_right, game->shadow_map_bottom, game->shadow_map_top, shadow_map_width, shadow_map_height);
+
+ 		v3 u = p1 - p0;
+ 		v3 v = p2 - p0;
+ 		float det = u.x * v.y - v.x * u.y;
+
+ 		if (fabsf(det) < 0.0001f)
+			continue;
+
+		
+		det = 1 / det;
+
+	    v2 tmin = {fmin(p0.x, fmin(p1.x, p2.x)), fmin(p0.y, fmin(p1.y, p2.y))};
+	    v2 tmax = {fmax(p0.x, fmax(p1.x, p2.x)), fmax(p0.y, fmax(p1.y, p2.y))};
+	
+	    int min_x = floorf(tmin.x);
+	    int max_x = floorf(tmax.x) + 1;
+	    int min_y = floorf(tmin.y);
+	    int max_y = floorf(tmax.y) + 1;
+	
+	    if (min_x < 0) min_x = 0;
+	    if (min_y < 0) min_y = 0;
+	    if (max_x > shadow_map_width) max_x = shadow_map_width;
+	    if (max_y > shadow_map_height) max_y = shadow_map_height;
+		if (min_x >= max_x || min_y >= max_y)
+			continue;
+
+		for (int y = min_y; y < max_y; y++)
+    	{
+    	    for (int x = min_x; x < max_x; x++)
+    	    {
+                v3 p = V3(x + 0.5f, y + 0.5f, 0) - p0;
+	 			float alpha = p.x * v.y * det + p.y * (-v.x) * det;
+	 			float beta = p.x * (-u.y) * det + p.y * u.x * det;
+	
+				if (alpha < 0 || beta < 0 || alpha + beta > 1)
+				    continue ;
+
+				float z = p0.z * (1 - alpha - beta) + p1.z * alpha + p2.z * beta;
+
+				if (z >= 0 && z < shadow_map[y * shadow_map_width + x])
+					shadow_map[y * shadow_map_width + x] = z;
+			}
+		}
+	}
+	for (int y = 0; y < game->height; y++)
+	{
+		for (int x = 0; x < game->width; x++)
+		{
+			float z = shadow_map[y * shadow_map_width + x];
+
+			v3 c = V3(z, z, z) / far_clip_plane;
+
+			if (c.r > 1) c.r = 1;
+			if (c.g > 1) c.g = 1;
+			if (c.b > 1) c.b = 1;
+
+			game->pixels[y * game->width + x] = 
+	    	   							   ((uint32_t)(c.r * 255 + 0.5f) << 24) |
+	    	   					           ((uint32_t)(c.g * 255 + 0.5f) << 16) |
+	    	   					           ((uint32_t)(c.b * 255 + 0.5f) << 8);
+		}
+	}
+
+
+}
+
 void render_game(Game *game)
 {
 	wait_for_all_work_to_finish(game);
@@ -713,10 +887,12 @@ THREAD_WORK_FUNC(draw_triangle_work)
 			v3 p0 = cp0, p1 = cp1, p2 = cp2;
 			v2 uv0 = triangle->uv0, uv1 = triangle->uv1, uv2 = triangle->uv2;
 
+			int swp = 0;
+
 			if ((clip_up && !d0) || (!clip_up && d0))
-				swap(p0, p2), swap(uv0, uv2);
+				swap(p0, p2), swap(uv0, uv2), swp = 1;
 			else if ((clip_up && !d1) || (!clip_up && d1))
-				swap(p1, p2), swap(uv1, uv2);
+				swap(p1, p2), swap(uv1, uv2), swp = 2;
 
 			v3 x0 = p2 - ((game->near_clip_plane + p2.z) / (p0.z - p2.z)) * (p0 - p2);
 			v3 x1 = p2 - ((game->near_clip_plane + p2.z) / (p1.z - p2.z)) * (p1 - p2);
@@ -726,8 +902,8 @@ THREAD_WORK_FUNC(draw_triangle_work)
 
 			if (clip_up)
 			{
-				triangles[triangle_count++] = Triangle{.p0 = p2, .p1 = x0, .p2 = x1,
-						.uv0 = uv2, .uv1 = x0_uv, .uv2 = x1_uv};
+				triangles[triangle_count++] = Triangle{.p0 = x0, .p1 = x1, .p2 = p2,
+						.uv0 = x0_uv, .uv1 = x1_uv, .uv2 = uv2};
 			}
 			else
 			{
@@ -740,12 +916,79 @@ THREAD_WORK_FUNC(draw_triangle_work)
 			v3 normal = cross(cp1 - cp0, cp2 - cp0);
 			for (int i = 0; i < triangle_count; i++)
 			{
-				if (dot(normal, cross(triangles[i].p1 - triangles[i].p0,
-									  triangles[i].p2 - triangles[i].p0)) < 0)
+				
+				Triangle *t = &triangles[i];
+
+				float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
+#if 0
+
+				if (d < 0)
 				{
 					swap(triangles[i].p1, triangles[i].p2);
 					swap(triangles[i].uv1, triangles[i].uv2);
 				}
+				else if (!d)
+				{
+					d = dot(cross(cp2 - cp1, cp2 - cp0), cross(t->p2 - t->p1, t->p2 - t->p0));
+
+					if (d < 0)
+					{
+						swap(triangles[i].p0, triangles[i].p1);
+						swap(triangles[i].uv0, triangles[i].uv1);
+					}
+				}
+#else
+				if (!clip_up)
+				{
+					if (swp == 1 || swp == 2)
+					{
+						swap(triangles[0].p1, triangles[0].p2);
+						swap(triangles[0].uv1, triangles[0].uv2);
+
+					}
+					if (swp == 2)
+					{
+						swap(triangles[1].p1, triangles[1].p2);
+						swap(triangles[1].uv1, triangles[1].uv2);
+					}
+	//				else if (swp == 2)
+	//				{
+	//					swap(triangles[0].p1, triangles[0].p2);
+	//					swap(triangles[0].uv1, triangles[0].uv2);
+	//				}
+					float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
+
+					assert(d >= 0);
+					break ;
+				}
+				else
+				{
+
+				//float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
+				//if (d < 0)
+				//{
+				//	swap(triangles[i].p1, triangles[i].p2);
+				//	swap(triangles[i].uv1, triangles[i].uv2);
+				//}
+				//break ;
+				//assert(triangle_count == 1);
+					if (swp == 1)
+					{
+						swap(triangles[0].p1, triangles[0].p2);
+						swap(triangles[0].uv1, triangles[0].uv2);
+					}
+					else if (swp == 2)
+					{
+						swap(triangles[0].p0, triangles[0].p2);
+						swap(triangles[0].uv0, triangles[0].uv2);
+					}
+
+					float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
+
+					assert(d >= 0);
+					break ;
+				}
+#endif
 			}
 		}
 #if 1
@@ -844,7 +1087,8 @@ void draw_triangle(Game *game, Triangle *t)
 	// TODO: check this
 //	if (dot(cross(t->p1 - t->p0, t->p2 - t->p0), t->p1 - game->camera_p) >= 0)
 //		return ;
-//
+
+#if 0
 	ThreadWork *work = game->curr_thread_work;
 
 	if (!work || ((DrawTriangleData *)work->data)->triangle_count == ARRAY_LENGTH(((DrawTriangleData *)work->data)->triangles))
@@ -861,6 +1105,9 @@ void draw_triangle(Game *game, Triangle *t)
     data->triangles[data->triangle_count++] = *t;
 
 	game->curr_thread_work = work;
+#else
+	game->triangles[game->triangle_count++] = *t;
+#endif
 }
 
 
@@ -998,6 +1245,8 @@ void load_animation(const char *dir, Mesh *out, int frame_count, Texture *textur
     }
 }
 
+#include <pthread.h>
+
 extern "C" void game_update_and_render(Game *game)
 {
 	struct timespec time_start, time_end;
@@ -1007,9 +1256,16 @@ extern "C" void game_update_and_render(Game *game)
 
 	if (!game->is_initialized)
     {
+#if THREADS
+		 pthread_t thread_ids[CORE_COUNT];
+		 for (int i = 1; i < CORE_COUNT; i++)
+			 pthread_create(&thread_ids[i], 0, game_thread_work, game);
+#endif
+
         game->starwars_tex = load_texture("starwars.png");
 		game->grass_tex = load_texture("grass.png");
 		game->grass_top_tex = load_texture("grass_top.png");
+		game->ground_tex = load_texture("ground.png");
 
 		{
 			Texture *t = &game->checkerboard_tex;
@@ -1030,24 +1286,26 @@ extern "C" void game_update_and_render(Game *game)
 			game->cow_mesh.triangles[i].uv2 *= 20;
 		}
 
+
         game->monkey_mesh = load_mesh("monkey.obj");
-		game->head_tex = load_texture("african_head.png");
+		game->african_head_tex = load_texture("african_head.png");
+		game->african_head_mesh = load_mesh("african_head.obj", &game->african_head_tex);
 
 
 
 
+		game->light_p = V3(0, 0, 0);
+		game->light_rotation = V3(0, 0, 0);
+
+		game->shadow_map_width = game->width;
+		game->shadow_map_height = game->height;
+		game->shadow_map = (float *)malloc(game->shadow_map_width * game->shadow_map_height * sizeof(float));
 
         //load_animation("starwars_animation", game->starwars_animation, 116, &game->starwars_tex);
 
-		game->near_clip_plane = 0.08f;
+		game->near_clip_plane = 0.125f;
 		game->far_clip_plane = 1000;
 		game->fov = 60;
-
-		game->triangles = (Triangle *)malloc(sizeof(*game->triangles) * MAX_TRIANGLE_COUNT);
-		game->thread_work = (ThreadWork *)malloc(sizeof(*game->thread_work) * MAX_TRIANGLE_COUNT * 2);
-		game->zbuffer = (float *)malloc(game->width * game->height * MAX_SAMPLES_PER_PIXEL * sizeof(*game->zbuffer));
-		game->pixels_aa = (uint32_t *)malloc(game->width * game->height * MAX_SAMPLES_PER_PIXEL * sizeof(uint32_t));
-		assert(game->triangles && game->thread_work && game->zbuffer && game->pixels_aa);
 
         game->camera_p = (v3){0, 1, 8};
        game->camera_p = (v3){0, 0, 0};
@@ -1058,6 +1316,13 @@ extern "C" void game_update_and_render(Game *game)
 		game->right = game->film_width * 0.5f;
 		game->bottom = -game->top;
 		game->left = -game->right;
+
+
+		game->triangles = (Triangle *)malloc(sizeof(*game->triangles) * MAX_TRIANGLE_COUNT);
+		game->thread_work = (ThreadWork *)malloc(sizeof(*game->thread_work) * MAX_TRIANGLE_COUNT * 2);
+		game->zbuffer = (float *)malloc(game->width * game->height * MAX_SAMPLES_PER_PIXEL * sizeof(*game->zbuffer));
+		game->pixels_aa = (uint32_t *)malloc(game->width * game->height * MAX_SAMPLES_PER_PIXEL * sizeof(uint32_t));
+		assert(game->triangles && game->thread_work && game->zbuffer && game->pixels_aa);
 
 		srand(time(0));
 
@@ -1090,7 +1355,7 @@ extern "C" void game_update_and_render(Game *game)
 	game->camera_p  += game->camera_dp * DT;
 
 	{
-		game->near_clip_plane = 0.08f;
+		game->near_clip_plane = 0.125f;
 		game->far_clip_plane = 1000;
 		game->fov = 60;
         game->film_width = tan((game->fov*0.5f) * DEG_TO_RAD) * 2 * game->near_clip_plane;
@@ -1166,7 +1431,7 @@ extern "C" void game_update_and_render(Game *game)
 		t.uv2 = V2(1000, 1000);
 		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
 		t.color = V3(.6, .6, .6);
-		//t.texture = &game->checkerboard_tex;
+		t.texture = &game->ground_tex;
 		draw_triangle(game, &t);
 	}
 	{
@@ -1180,7 +1445,7 @@ extern "C" void game_update_and_render(Game *game)
 		t.uv2 = V2(0, 1000);
 		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
 		t.color = V3(.6, .6, .6);
-		//t.texture = &game->checkerboard_tex;
+		t.texture = &game->ground_tex;
 		draw_triangle(game, &t);
 	}
 	//{
@@ -1196,13 +1461,15 @@ extern "C" void game_update_and_render(Game *game)
 	//	t.color = V3(0.5, 0.5, 0.5);
 	//	draw_triangle(game, &t);
 	//}
-	 draw_mesh(game, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V3(0.8, 0.4, 0.2));
+	 draw_mesh(game, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V3(0.5, 0.8, 0.2));
 
     draw_mesh(game, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
     draw_mesh(game, &game->starwars_mesh, V3(0, -0.5, -5), V3(1, 1, 1), V3(0, 0, 0));
+    draw_mesh(game, &game->african_head_mesh, V3(-2, 1, -5), V3(1, 1, 1), V3(0, 0, 0));
     
     game->animation_time += DT;
 
+	render_shadow_map(game);
 	render_game(game);
 
 	clock_gettime(CLOCK_MONOTONIC, &time_end);
