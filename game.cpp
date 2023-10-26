@@ -6,6 +6,8 @@
 
 #define print_v3(v) printf("%s = (%f, %f, %f)\n", #v, v.x, v.y, v.z)
 
+
+
 void swap(float &a, float &b)
 {
 	float t = a;
@@ -305,9 +307,10 @@ v3 camera_to_world(Game *game, v3 p)
 
 
 
-v3 project_to_screen(Game *game, v3 p)
+v3 project_to_screen(Game *game, v3 p, int transform_to_camera = 1)
 {
-	p = world_to_camera(game, p);
+	if (transform_to_camera)
+		p = world_to_camera(game, p);
 
     v3 res;
 	
@@ -352,6 +355,7 @@ THREAD_WORK_FUNC(render_tile_work)
 	int clip_max_x = clip_max.x;
 	int clip_max_y = clip_max.y;
 
+#if 0
 	for (int y = clip_min_y; y < clip_max_y; y++)
     {
         for (int x = clip_min_x; x < clip_max_x; x++)
@@ -364,6 +368,7 @@ THREAD_WORK_FUNC(render_tile_work)
 			}
         }
     }
+#endif
 
 
 	for (int j = 0; j < game->triangles_per_tile_count[tile_index]; j++)
@@ -541,6 +546,7 @@ THREAD_WORK_FUNC(render_tile_work)
 						// should specular also be multiplied?
 						c *= texture_color * t->color;
 		
+#if 0
 						{
 
 							bool in_shadow = 1;
@@ -572,6 +578,7 @@ THREAD_WORK_FUNC(render_tile_work)
 							if (in_shadow)
 								c *= 0.4;
 						}
+#endif
 
 						
 						//c = V3(z, z, z) / game->far_clip_plane;
@@ -1140,8 +1147,8 @@ void draw_triangles(Game *game)
 		Triangle *triangle = &game->triangles[i];
 
 		// TODO: check this
-		if (dot(cross(triangle->p1 - triangle->p0, triangle->p2 - triangle->p0), triangle->p0 - game->camera_p) >= 0)
-			continue ;
+		//if (dot(cross(triangle->p1 - triangle->p0, triangle->p2 - triangle->p0), triangle->p0 - game->camera_p) >= 0)
+		//	continue ;
 		
 		Triangle triangles[2];
 		int triangle_count = 0;
@@ -1270,9 +1277,9 @@ void draw_triangles(Game *game)
 						swap(triangles[0].uv0, triangles[0].uv2);
 					}
 
-					float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
+					//float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
 
-					assert(d >= 0);
+					//assert(d >= 0);
 					break ;
 				}
 #endif
@@ -1367,15 +1374,11 @@ void draw_triangles(Game *game)
 	}
 
 }
-void draw_cube(Game *game, v3 c, v3 rotation, float radius, v3 color, Texture *top, Texture *sides)
+void draw_cube(Game *game, v3 c, v3 u, v3 v, v3 w, v3 radius, v3 color, Texture *top = 0, Texture *sides = 0)
 {
-	v3 u = rotate(V3(1, 0, 0), rotation);
-	v3 v = rotate(V3(0, 1, 0), rotation);
-	v3 w = rotate(V3(0, 0, 1), rotation);
-
-    u = noz(u) * radius;
-    v = noz(v) * radius;
-    w = noz(w) * radius;
+    u = noz(u) * radius.x;
+    v = noz(v) * radius.y;
+    w = noz(w) * radius.z;
 
 	v3 p00 = c - u - v + w;
 	v3 p01 = c + u - v + w;
@@ -1434,6 +1437,70 @@ void draw_cube(Game *game, v3 c, v3 rotation, float radius, v3 color, Texture *t
 
 }
 
+
+void draw_line(Game *game, v3 p0, v3 p1, v3 color = V3(1, 1, 1), float thickness = 0.01f)
+{
+#if 0
+	v3 radius = V3(thickness, thickness, length(p1 - p0) * 0.5f);
+
+	v3 up = V3(0, 1, 0);
+
+	v3 w = noz(p1 - p0);
+	v3 u = noz(cross(up, w));
+	v3 v = noz(cross(w, u));
+
+	draw_cube(game, p0 + (p1 - p0) * 0.5f, u, v, w, radius, color);
+
+#else
+	p0 = world_to_camera(game, p0);
+	p1 = world_to_camera(game, p1);
+	// clip
+	if (p0.z > -game->near_clip_plane)
+		swap(p0, p1);
+	if (p0.z > -game->near_clip_plane)
+		return ;
+	if (p1.z > -game->near_clip_plane)
+	{
+		float t = (-game->near_clip_plane - p1.z) / (p1.z - p0.z);
+		p1 = p1 + t * (p1 - p0);
+	}
+	
+	p0 = project_to_screen(game, p0, 0);
+	p1 = project_to_screen(game, p1, 0);
+
+	uint32_t color32 = ((uint32_t)(color.r * 255 + 0.5f) << 24) |
+	    ((uint32_t)(color.g * 255 + 0.5f) << 16) |
+	    ((uint32_t)(color.b * 255 + 0.5f) << 8);
+	v3 p = p0;
+
+	float t = 0;
+	while (t < 1)
+	{
+		v3 p = p0 + t * (p1 - p0);
+		
+		int x = p.x + 0.5f;
+		int y = p.y + 0.5f;
+		float z = p.z;
+
+		if (x >= 0 && x < game->width && y >= 0 && y < game->height)
+		{
+			for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
+			{
+				int i = y * game->width * SAMPLES_PER_PIXEL + x * SAMPLES_PER_PIXEL;
+
+				if (z < game->zbuffer[i])
+				{
+					game->zbuffer[i] = z;
+					game->pixels_aa[i] = color32;
+				}
+			}
+		}
+		t += 0.01f;
+	}
+#endif
+
+}
+
 void draw_mesh(Game *game, Mesh *mesh, v3 position, v3 scale, v3 rotation, v3 color = V3(1, 1, 1))
 {
     m3x3 rot_matrix = z_rotation(rotation.z) * (y_rotation(rotation.y) * x_rotation(rotation.x));
@@ -1454,7 +1521,20 @@ void draw_mesh(Game *game, Mesh *mesh, v3 position, v3 scale, v3 rotation, v3 co
 
         t.color = color;
 
-        draw_triangle(game, &t);
+      //  draw_triangle(game, &t);
+
+		v3 c = (t.p0 + t.p1 + t.p2) / 3.f;
+		v3 normal = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
+
+		v3 nc = (normal + V3(1, 1, 1)) * 0.5f;
+		//if (i % 2)
+		{
+			float f = 0.001f;
+			draw_line(game, c, c + normal * 0.1f, nc, f);
+			draw_line(game, t.p0, t.p1, color, f);
+			draw_line(game, t.p0, t.p2, color, f);
+			draw_line(game, t.p1, t.p2, color, f);
+		}
     }
 }
 
@@ -1632,6 +1712,19 @@ extern "C" void game_update_and_render(Game *game)
 	else if (game->go_back)
 		game->camera_p -= game->camera_z * DT * 0.1;
 
+	for (int y = 0; y < game->height; y++)
+    {
+        for (int x = 0; x < game->width; x++)
+        {
+			for (int i = 0; i < SAMPLES_PER_PIXEL; i++)
+			{
+				int idx = y * game->width * SAMPLES_PER_PIXEL + x * SAMPLES_PER_PIXEL + i;
+           		game->zbuffer[idx] = game->far_clip_plane;
+           		game->pixels_aa[idx] = 0x87ceeb00;
+           		game->pixels_aa[idx] = 0;
+			}
+        }
+    }
 	
 
 //	draw_triangle(game, V3(-1, 0, -2), V3(1, 0, -2), V3(1, 2, -2), V3(1, 0, 0), &game->grass_tex,
@@ -1701,6 +1794,10 @@ extern "C" void game_update_and_render(Game *game)
 		t.texture = &game->ground_tex;
 		draw_triangle(game, &t);
 	}
+
+	draw_line(game, V3(0, 1, -4), V3(1.5, 1, -4), V3(1, 0, 0));
+
+	draw_line(game, V3(0, 1, -3), V3(2, 2, -3), V3(1, 0, 0));
 	//{
 	//	Triangle t = {};
 
@@ -1721,6 +1818,7 @@ extern "C" void game_update_and_render(Game *game)
     draw_mesh(game, &game->african_head_mesh, V3(-2, 1, -5), V3(1, 1, 1), V3(0, 0, 0));
     
     game->animation_time += DT;
+
 
 	render_shadow_map(game);
 	draw_triangles(game);
