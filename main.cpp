@@ -30,6 +30,9 @@ int main(void)
     game->height = 512;
 
 
+	assert(game->width % TILES_PER_WIDTH == 0);
+	assert(game->width % TILES_PER_HEIGHT == 0);
+
 	int relative_mouse_mode = 0;
 
 

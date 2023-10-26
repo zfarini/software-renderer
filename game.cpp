@@ -283,7 +283,7 @@ v3 u32_to_v3_01(uint32_t color)
 void get_tile_clip_bounds(Game *game, int index, v2 &min_clip, v2 &max_clip)
 {
 	int min_x = ((index) % TILES_PER_WIDTH) * (game->width / TILES_PER_WIDTH);
-	int min_y = ((index) / TILES_PER_HEIGHT) * (game->height / TILES_PER_HEIGHT);
+	int min_y = ((index) / TILES_PER_WIDTH) * (game->height / TILES_PER_HEIGHT);
 
 	int max_x = min_x + game->width / TILES_PER_WIDTH;
 	int max_y = min_y + game->height / TILES_PER_HEIGHT;
@@ -1471,34 +1471,195 @@ void draw_line(Game *game, v3 p0, v3 p1, v3 color = V3(1, 1, 1), float thickness
 	uint32_t color32 = ((uint32_t)(color.r * 255 + 0.5f) << 24) |
 	    ((uint32_t)(color.g * 255 + 0.5f) << 16) |
 	    ((uint32_t)(color.b * 255 + 0.5f) << 8);
-	v3 p = p0;
 
-	float t = 0;
-	while (t < 1)
+
+
+	float line_length = length(p1 - p0);
+
+	v2 p0_v2 = V2(p0.x, p0.y);
+
+	v2 perp = noz(V2(-(p1.y - p0.y), p1.x - p0.x));
+
+	int p0_x = p0.x;
+	int p0_y = p0.y;
+	int p1_x = p1.x;
+	int p1_y = p1.y;
+
+	// TODO: better clipping and also clip p1
+	if (p0_x < 0)
 	{
-		v3 p = p0 + t * (p1 - p0);
-		
-		int x = p.x + 0.5f;
-		int y = p.y + 0.5f;
-		float z = p.z;
+		if (p1_x < 0) return ;
 
-		if (x >= 0 && x < game->width && y >= 0 && y < game->height)
+		float t = -(float)p0_x / (p1_x - p0_x);
+
+		p0_x = 0;
+		p0_y += t * (p1_y - p0_y);
+	}
+	if (p0_x >= game->width)
+	{
+		if (p1_x >= game->width) return ;
+		float t = (float)(game->width - 1 - p0_x) / (p1_x - p0_x);
+
+		p0_x = game->width - 1;
+		p0_y += t * (p1_y - p0_y);
+	}
+	if (p0_y < 0)
+	{
+		if (p1_y < 0) return ;
+
+		float t = -(float)p0_y / (p1_y - p0_y);
+
+		p0_y = 0;
+		p0_x += t * (p1_x - p0_x);
+	}
+	if (p0_y >= game->height)
+	{
+		if (p1_y >= game->height) return ;
+		float t = (float)(game->height - 1 - p0_y) / (p1_y - p0_y);
+
+		p0_y = game->height - 1;
+		p0_x += t * (p1_x - p0_x);
+	}
+
+
+
+
+//	if (p0_x < 0)
+//		p0_x = 0;
+//	if (p1_x > game->width)
+//		p1_x = game->width;
+
+	int dx = p1.x - p0.x > 0 ? 1 : -1;
+	int dy = p1.y - p0.y > 0 ? 1 : -1;
+
+	int p_x = p0.x;
+	int p_y = p0.y;
+
+	// !!!!!!!!!!!!!!TODO: there is a bug with z calculation, check with sphere 
+	//
+	int max_iterations = (game->width + game->height) * 2;
+	while (max_iterations--)
+	{
+
+		// TODO: check this
+		float one_over_z = lerp(p0.z, length(V2(p_x, p_y) - p0_v2) / line_length, p1.z);
+		float p_z = 1.f / one_over_z;
+
+		// TODO: do we really have to do this?
+		if (!(p_x >= 0 && p_x < game->width && p_y >= 0 && p_y < game->height))
+
+			break ;
+		for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
 		{
-			for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
-			{
-				int i = y * game->width * SAMPLES_PER_PIXEL + x * SAMPLES_PER_PIXEL;
+			int i = p_y * game->width * SAMPLES_PER_PIXEL + p_x * SAMPLES_PER_PIXEL + sample;
 
-				if (z < game->zbuffer[i])
-				{
-					game->zbuffer[i] = z;
-					game->pixels_aa[i] = color32;
-				}
+			if (p_z < game->zbuffer[i])
+			{
+				game->zbuffer[i] = p_z;
+				game->pixels_aa[i] = color32;
 			}
 		}
-		t += 0.01f;
+		// consider (p_x + dx, py) and (p_x, py + dy)	
+		float d0 = fabsf(dot(perp, V2(p_x + dx, p_y) - p0_v2));
+		float d1 = fabsf(dot(perp, V2(p_x, p_y + dy) - p0_v2));
+
+		// TODO: update z in here?
+		if (d0 < d1)
+			p_x += dx;
+		else
+			p_y += dy;
+
+		//if (p_x == p1_x && p_y == p1_y)
+		//	break ;
+		if (abs(p_x - p0_x) > abs(p1_x - p0_x) || abs(p_y - p0_y) > abs(p1_y - p0_y))
+			break ;
 	}
 #endif
 
+}
+
+void draw_sphere(Game *game, v3 center, float radius, v3 color)
+{
+	center = world_to_camera(game, center);
+	
+	v3 box[8];
+
+	int j = 0;
+
+	int min_x = game->width, min_y = game->height, max_x = 0, max_y = 0;
+	// find bounding box in 3d
+	for (int i = 0; i < 8; i++)
+	{
+		box[j] = center + (V3(1, 0, 0) * (((i >> 0) & 1) > 0 ? 1 : -1) +
+			   V3(0, 1, 0) * (((i >> 1) & 1) > 0 ? 1 : -1) +
+			   V3(0, 0, 1) * (((i >> 2) & 1) > 0 ? 1 : -1)) * radius;
+
+		if (box[j].z > -game->near_clip_plane)
+			continue ;
+		box[j] = project_to_screen(game, box[j], 0);
+
+		min_x = fmin(min_x, box[j].x);
+		min_y = fmin(min_y, box[j].y);
+		max_x = fmax(max_x, box[j].x);
+		max_y = fmax(max_y, box[j].y);
+		j++;
+	}
+	if (j <= 1)
+		return ;
+	if (min_x < 0) min_x = 0;
+	if (min_y < 0) min_y = 0;
+	if (max_x > game->width) max_x = game->width;
+	if (max_y > game->height) max_y = game->height;
+
+	uint32_t color32 = ((uint32_t)(color.r * 255 + 0.5f) << 24) |
+	    ((uint32_t)(color.g * 255 + 0.5f) << 16) |
+	    ((uint32_t)(color.b * 255 + 0.5f) << 8);
+
+	printf("%d %d %d %d\n", min_x, max_x, min_y, max_y);
+
+	for (int y = min_y; y < max_y; y++)
+	{
+		for (int x = min_x; x < max_x; x++)
+		{
+			for (int i = 0; i < SAMPLES_PER_PIXEL; i++)
+			{
+				v2 pixel_p = V2(x, y) + game->samples_offset[i];
+
+				float dir_x = ((pixel_p.x / game->width) - 0.5f) * game->film_width;
+				float dir_y = ((1 - (pixel_p.y) / game->height) - 0.5f) * game->film_height;
+				v3 ray_dir = V3(dir_x, dir_y, -game->near_clip_plane);			
+				v3 ray_origin = V3(0, 0, 0);
+
+				v3 relative_origin = ray_origin - center;
+				float a = dot(ray_dir, ray_dir);
+				float b = 2 * dot(relative_origin, ray_dir);
+				float c = dot(relative_origin, relative_origin) - radius * radius;
+				float delta = b * b - 4 * a * c;
+				if (delta >= 0)
+				{
+					float sq_delta = sqrtf(delta);
+					float t0 = (-b - sq_delta) / (2 * a);
+					float t1 = (-b + sq_delta) / (2 * a);
+
+					float t = -1;
+
+					if (t0 >= 0)
+						t = t0;
+					if (t1 >= 0 && (t0 < 0 || t1 < t0))
+						t = t1;
+					if (t < 0)
+						continue ;
+					float z = -(ray_origin + ray_dir * t).z;
+					int idx = y * game->width * SAMPLES_PER_PIXEL + x * SAMPLES_PER_PIXEL + i;
+					if (z < game->zbuffer[idx])
+					{
+						game->zbuffer[idx] = z;
+						game->pixels_aa[idx] = color32;
+					}
+				}
+			}
+		}
+	}
 }
 
 void draw_mesh(Game *game, Mesh *mesh, v3 position, v3 scale, v3 rotation, v3 color = V3(1, 1, 1))
@@ -1521,7 +1682,7 @@ void draw_mesh(Game *game, Mesh *mesh, v3 position, v3 scale, v3 rotation, v3 co
 
         t.color = color;
 
-      //  draw_triangle(game, &t);
+       //draw_triangle(game, &t);
 
 		v3 c = (t.p0 + t.p1 + t.p2) / 3.f;
 		v3 normal = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
@@ -1795,9 +1956,7 @@ extern "C" void game_update_and_render(Game *game)
 		draw_triangle(game, &t);
 	}
 
-	draw_line(game, V3(0, 1, -4), V3(1.5, 1, -4), V3(1, 0, 0));
-
-	draw_line(game, V3(0, 1, -3), V3(2, 2, -3), V3(1, 0, 0));
+	draw_sphere(game, V3(0, 2, -2), 1, V3(1, 0, 0));
 	//{
 	//	Triangle t = {};
 
@@ -1820,7 +1979,7 @@ extern "C" void game_update_and_render(Game *game)
     game->animation_time += DT;
 
 
-	render_shadow_map(game);
+	//render_shadow_map(game);
 	draw_triangles(game);
 	render_game(game);
 
