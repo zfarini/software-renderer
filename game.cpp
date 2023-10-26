@@ -540,7 +540,8 @@ THREAD_WORK_FUNC(render_tile_work)
 						v3 reflected = reflect(light_p - p, n);
 						float specular = powf(max(0, dot(noz(reflected), noz(p))), 20);
 
-						v3 c =  (ambient  + V3(diffuse, diffuse, diffuse)* 0.8)
+						ambient = V3(0, 0, 0);
+						v3 c =  (ambient * 0.2  + V3(diffuse, diffuse, diffuse)* 0.8)
 								+ V3(specular, specular, specular);
 						
 						// should specular also be multiplied?
@@ -709,21 +710,23 @@ void render_shadow_map(Game *game)
 {
 	wait_for_all_work_to_finish(game);
 
-	v3 light_dir = noz(V3(0, 0, -1));
-	v3 light_p = V3(0, 0, 0);
+//	v3 light_dir = noz(V3(0, 0, -1));
+//	v3 light_p = V3(0, 0, 0);
 
 
+	v3 light_p = game->light_p;
+	v3 light_dir = noz(game->light_p - V3(0, 0, -2));
 
-	light_p = game->camera_p;
-	light_dir = -game->camera_z;//V3(0, 0, -1);
+//	light_p = game->camera_p;
+//	light_dir = -game->camera_z;//V3(0, 0, -1);
+//
+//	light_p = V3(-1.324476, 3.339508, 1.321791);
+//	light_dir = -V3(-0.347648, 0.796530, 0.494652);
+//
+//	light_p = V3(4.660268, 1.544385, -4.050528);
+//	light_dir = V3(0.675710, 0.649448, 0.348760);
 
-	light_p = V3(-1.324476, 3.339508, 1.321791);
-	light_dir = -V3(-0.347648, 0.796530, 0.494652);
-
-	light_p = V3(4.660268, 1.544385, -4.050528);
-	light_dir = V3(0.675710, 0.649448, 0.348760);
-
-	v3 up = V3(0, 1, 0);
+	v3 up = V3(0, -1, 0);
 
 	v3 X = noz(cross(up, light_dir));
 	v3 Y = noz(cross(light_dir, X));
@@ -1582,6 +1585,9 @@ void draw_sphere(Game *game, v3 center, float radius, v3 color)
 {
 	center = world_to_camera(game, center);
 	
+	if (center.z - radius > -game->near_clip_plane)
+		return ;
+
 	v3 box[8];
 
 	int j = 0;
@@ -1594,8 +1600,8 @@ void draw_sphere(Game *game, v3 center, float radius, v3 color)
 			   V3(0, 1, 0) * (((i >> 1) & 1) > 0 ? 1 : -1) +
 			   V3(0, 0, 1) * (((i >> 2) & 1) > 0 ? 1 : -1)) * radius;
 
-		if (box[j].z > -game->near_clip_plane)
-			continue ;
+		//if (box[j].z > -game->near_clip_plane)
+		//	continue ;
 		box[j] = project_to_screen(game, box[j], 0);
 
 		min_x = fmin(min_x, box[j].x);
@@ -1611,11 +1617,7 @@ void draw_sphere(Game *game, v3 center, float radius, v3 color)
 	if (max_x > game->width) max_x = game->width;
 	if (max_y > game->height) max_y = game->height;
 
-	uint32_t color32 = ((uint32_t)(color.r * 255 + 0.5f) << 24) |
-	    ((uint32_t)(color.g * 255 + 0.5f) << 16) |
-	    ((uint32_t)(color.b * 255 + 0.5f) << 8);
-
-	printf("%d %d %d %d\n", min_x, max_x, min_y, max_y);
+	v3 light_p = world_to_camera(game, V3(3, 5, 0));//world_to_camera(game, game->light_p);
 
 	for (int y = min_y; y < max_y; y++)
 	{
@@ -1627,7 +1629,7 @@ void draw_sphere(Game *game, v3 center, float radius, v3 color)
 
 				float dir_x = ((pixel_p.x / game->width) - 0.5f) * game->film_width;
 				float dir_y = ((1 - (pixel_p.y) / game->height) - 0.5f) * game->film_height;
-				v3 ray_dir = V3(dir_x, dir_y, -game->near_clip_plane);			
+				v3 ray_dir = V3(dir_x, dir_y, -game->near_clip_plane);
 				v3 ray_origin = V3(0, 0, 0);
 
 				v3 relative_origin = ray_origin - center;
@@ -1649,10 +1651,44 @@ void draw_sphere(Game *game, v3 center, float radius, v3 color)
 						t = t1;
 					if (t < 0)
 						continue ;
-					float z = -(ray_origin + ray_dir * t).z;
+					v3 p = ray_origin + ray_dir * t;
+
+					//printf("%f %f\n", length(p - center), radius);
+
+					float z = -p.z;
 					int idx = y * game->width * SAMPLES_PER_PIXEL + x * SAMPLES_PER_PIXEL + i;
 					if (z < game->zbuffer[idx])
 					{
+						v3 n = noz(p - center);
+
+						v3 ambient = V3(0.52, .8, .9);
+
+
+						float diffuse = max(0, dot(noz(light_p - p), n));
+						
+						float light_strength = 10;
+
+
+						diffuse *= (1.0 / square(length(light_p - p))) * light_strength;
+				
+						v3 reflected = reflect(light_p - p, n);
+						float specular = powf(max(0, dot(noz(reflected), noz(p))), 20);
+
+						v3 c =  (ambient * 0.2f  + V3(diffuse, diffuse, diffuse)* 0.8)
+								+ V3(specular, specular, specular);
+
+
+						c *= color;
+
+	//					c = diffuse * color;
+
+						if (c.r > 1) c.r = 1;
+						if (c.g > 1) c.g = 1;
+						if (c.b > 1) c.b = 1;
+
+	    	   			uint32_t color32 = ((uint32_t)(c.r * 255 + 0.5f) << 24) |
+	    	   					           ((uint32_t)(c.g * 255 + 0.5f) << 16) |
+	    	   					           ((uint32_t)(c.b * 255 + 0.5f) << 8);
 						game->zbuffer[idx] = z;
 						game->pixels_aa[idx] = color32;
 					}
@@ -1682,7 +1718,7 @@ void draw_mesh(Game *game, Mesh *mesh, v3 position, v3 scale, v3 rotation, v3 co
 
         t.color = color;
 
-       //draw_triangle(game, &t);
+       draw_triangle(game, &t);
 
 		v3 c = (t.p0 + t.p1 + t.p2) / 3.f;
 		v3 normal = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
@@ -1691,10 +1727,10 @@ void draw_mesh(Game *game, Mesh *mesh, v3 position, v3 scale, v3 rotation, v3 co
 		//if (i % 2)
 		{
 			float f = 0.001f;
-			draw_line(game, c, c + normal * 0.1f, nc, f);
-			draw_line(game, t.p0, t.p1, color, f);
-			draw_line(game, t.p0, t.p2, color, f);
-			draw_line(game, t.p1, t.p2, color, f);
+	//		draw_line(game, c, c + normal * 0.1f, nc, f);
+	//		draw_line(game, t.p0, t.p1, color, f);
+	//		draw_line(game, t.p0, t.p2, color, f);
+	//		draw_line(game, t.p1, t.p2, color, f);
 		}
     }
 }
@@ -1882,7 +1918,7 @@ extern "C" void game_update_and_render(Game *game)
 				int idx = y * game->width * SAMPLES_PER_PIXEL + x * SAMPLES_PER_PIXEL + i;
            		game->zbuffer[idx] = game->far_clip_plane;
            		game->pixels_aa[idx] = 0x87ceeb00;
-           		game->pixels_aa[idx] = 0;
+           //		game->pixels_aa[idx] = 0;
 			}
         }
     }
@@ -1956,7 +1992,13 @@ extern "C" void game_update_and_render(Game *game)
 		draw_triangle(game, &t);
 	}
 
-	draw_sphere(game, V3(0, 2, -2), 1, V3(1, 0, 0));
+	float x = 3 * cos(game->time * 1.5);
+	float z = -4 + 3 * sin(game->time * 1.5);
+	v3 sphere = V3(x, 3, z);
+	sphere = V3(0, 0, -2);
+	draw_sphere(game, sphere, 0.7, V3(0.9, 0.2, 0.2));
+
+	game->light_p = sphere;
 	//{
 	//	Triangle t = {};
 

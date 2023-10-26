@@ -130,7 +130,7 @@ int main(void)
 
 
 		}
-		float dx = 7;
+		float dx = 8;
 
 		game->camera_dp = V3(0, 0, 0);
 
