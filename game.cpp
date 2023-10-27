@@ -511,8 +511,13 @@ THREAD_WORK_FUNC(render_tile_work)
 						v3 c =  (ambient * 0.2  + V3(diffuse, diffuse, diffuse)* 0.8)
 								+ V3(specular, specular, specular);
 						
+						float fog = 1, d = length(p);
+
+						if (d > 10)
+							fog = max(0, 1 - (d - 10) / 50.f);
+
 						// should specular also be multiplied?
-						c = texture_color * t->color;
+						c *= texture_color * t->color * fog;
 		
 #if 0
 						{
@@ -1105,6 +1110,24 @@ void draw_triangle(Game *game, Triangle *t)
 
 void draw_triangles(Game *game)
 {
+	struct {
+			v3 normal;
+			float d;
+	} planes[] = { // normal direction matters
+	{{0, 0, -1}, -game->near_clip_plane}, // front
+			{cross(V3(game->left, game->bottom, -game->near_clip_plane),
+				   V3(game->left, game->top, -game->near_clip_plane)), 0}, // left
+		//
+			{cross(V3(game->right, game->top, -game->near_clip_plane),
+				   V3(game->right, game->bottom, -game->near_clip_plane)), 0}, // right
+			{cross(V3(game->left, game->top, -game->near_clip_plane),
+				V3(game->right, game->top, -game->near_clip_plane)), 0}, // top
+				{cross(V3(game->right, game->bottom, -game->near_clip_plane),
+					   V3(game->left, game->bottom, -game->near_clip_plane)), 0}, // bottom
+		};
+	for (int i = 0; i < ARRAY_LENGTH(planes); i++)
+		planes[i].normal = noz(planes[i].normal);
+
 	game->triangle_count2 = 0;
 	for (int i = 0; i < game->triangle_count; i++)
 	{
@@ -1113,91 +1136,107 @@ void draw_triangles(Game *game)
 		// TODO: check this
 		//if (dot(cross(triangle->p1 - triangle->p0, triangle->p2 - triangle->p0), triangle->p0 - game->camera_p) >= 0)
 		//	continue ;
+		Triangle triangles[16];
+		int triangle_count = 1;
+
+		triangles[0] = *triangle;
+		triangles[0].p0 = world_to_camera(game, triangle->p0);
+		triangles[0].p1 = world_to_camera(game, triangle->p1);
+		triangles[0].p2 = world_to_camera(game, triangle->p2);
 		
-		Triangle triangles[2];
-		int triangle_count = 0;
-	
-		v3 cp0 = world_to_camera(game, triangle->p0);
-		v3 cp1 = world_to_camera(game, triangle->p1);
-		v3 cp2 = world_to_camera(game, triangle->p2);
+
+
+		for (int i = 0; i < ARRAY_LENGTH(planes); i++)
+		{
+			Triangle new_triangles[16];
+			int new_triangle_count = 0;
+
+			for (int j = 0; j < triangle_count; j++)
+			{
+
+				Triangle *triangle = &triangles[j];
+
+				v3 cp0 = triangle->p0, cp1 = triangle->p1, cp2 = triangle->p2;
+
+				int d0 = -dot(cp0, planes[i].normal) > planes[i].d;
+				int d1 = -dot(cp1, planes[i].normal) > planes[i].d;
+				int d2 = -dot(cp2, planes[i].normal) > planes[i].d;
 		
-
-	
-		int d0 = cp0.z > -game->near_clip_plane;
-		int d1 = cp1.z > -game->near_clip_plane;
-		int d2 = cp2.z > -game->near_clip_plane;
-	
-		if (d0 + d1 + d2 == 0)
-		{
-			triangles[triangle_count++] = Triangle{.p0 = cp0, .p1 = cp1, .p2 = cp2, .uv0 = triangle->uv0, .uv1 = triangle->uv1, .uv2 = triangle->uv2,
-				.n0 = triangle->n0, .n1 = triangle->n1, .n2 = triangle->n2};
-		}
-		else if (d0 + d1 + d2 != 3)
-		{
-			/*
-				p0        p1
-
-				---x0----x1-- (clip plane)
-						
-				 	   p2
-			*/
-			int clip_up = (d0 + d1 + d2) == 2;
-
-			v3 p0 = cp0, p1 = cp1, p2 = cp2;
-			v2 uv0 = triangle->uv0, uv1 = triangle->uv1, uv2 = triangle->uv2;
-			v3 n0 = triangle->n0, n1 = triangle->n1, n2 = triangle->n2;
-
-			int swp = 0;
-
-			if ((clip_up && !d0) || (!clip_up && d0))
-				swap(p0, p2), swap(uv0, uv2), swap(n0, n2), swp = 1;
-			else if ((clip_up && !d1) || (!clip_up && d1))
-				swap(p1, p2), swap(uv1, uv2), swap(n1, n2), swp = 2;
-
-			v3 x0 = p2 - ((game->near_clip_plane + p2.z) / (p0.z - p2.z)) * (p0 - p2);
-			v3 x1 = p2 - ((game->near_clip_plane + p2.z) / (p1.z - p2.z)) * (p1 - p2);
-
-			float t0 = length(x0 - p0) / length(p2 - p0);
-			float t1 = length(x1 - p1) / length(p2 - p1);
-
-			v2 x0_uv = lerp(uv0, t0, uv2);
-			v2 x1_uv = lerp(uv1, t1, uv2);
-			
-			v3 x0_n = noz(lerp(n0, t0, n2));
-			v3 x1_n = noz(lerp(n1, t1, n2));
-
-
-			if (clip_up)
-			{
-				triangles[triangle_count++] = Triangle{.p0 = x0, .p1 = x1, .p2 = p2,
-						.uv0 = x0_uv, .uv1 = x1_uv, .uv2 = uv2,
-						.n0 = x0_n, .n1 = x1_n, .n2 = n2};
-			}
-			else
-			{
-				triangles[triangle_count++] = {.p0 = p0, .p1 = p1, .p2 = x0,
-						.uv0 = uv0, .uv1 = uv1, .uv2 = x0_uv,
-						.n0 = n0, .n1 = n1, .n2 = x0_n};
-				triangles[triangle_count++] = {.p0 = p1, .p1 = x1, .p2 = x0,
-						.uv0 = uv1, .uv1 = x1_uv, .uv2 = x0_uv,
-						.n0 = n1, .n1 = x1_n, .n2 = x0_n};
-			}
-
-			v3 normal = cross(cp1 - cp0, cp2 - cp0);
-
-			for (int i = 0; i < triangle_count; i++)
-			{
-				
-				Triangle *t = &triangles[i];
-
-				float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
-				if (d < 0)
+				if (d0 + d1 + d2 == 0)
+					new_triangles[new_triangle_count++] = *triangle;
+				else if (d0 + d1 + d2 != 3)
 				{
-					swap(t->p1, t->p2);
-					swap(t->uv1, t->uv2);
-					swap(t->n1, t->n2);
+					/*
+						p0        p1
+
+						---x0----x1-- (clip plane)
+								
+						 	   p2
+					*/
+					int clip_up = (d0 + d1 + d2) == 2;
+
+					v3 p0 = cp0, p1 = cp1, p2 = cp2;
+					v2 uv0 = triangle->uv0, uv1 = triangle->uv1, uv2 = triangle->uv2;
+					v3 n0 = triangle->n0, n1 = triangle->n1, n2 = triangle->n2;
+
+					int swp = 0;
+
+					if ((clip_up && !d0) || (!clip_up && d0))
+						swap(p0, p2), swap(uv0, uv2), swap(n0, n2), swp = 1;
+					else if ((clip_up && !d1) || (!clip_up && d1))
+						swap(p1, p2), swap(uv1, uv2), swap(n1, n2), swp = 2;
+
+#if 0
+					v3 x0 = p2 - ((game->near_clip_plane + p2.z) / (p0.z - p2.z)) * (p0 - p2);
+					v3 x1 = p2 - ((game->near_clip_plane + p2.z) / (p1.z - p2.z)) * (p1 - p2);
+#else
+
+					v3 x0 = p2 + ((-planes[i].d - dot(p2, planes[i].normal)) / dot(p0 - p2, planes[i].normal)) * (p0 - p2);
+					v3 x1 = p2 + ((-planes[i].d - dot(p2, planes[i].normal)) / dot(p1 - p2, planes[i].normal)) * (p1 - p2);
+#endif
+
+					float t0 = length(x0 - p0) / length(p2 - p0);
+					float t1 = length(x1 - p1) / length(p2 - p1);
+
+					v2 x0_uv = lerp(uv0, t0, uv2);
+					v2 x1_uv = lerp(uv1, t1, uv2);
+					
+					v3 x0_n = noz(lerp(n0, t0, n2));
+					v3 x1_n = noz(lerp(n1, t1, n2));
+
+
+					if (clip_up)
+					{
+						new_triangles[new_triangle_count++] = Triangle{.p0 = x0, .p1 = x1, .p2 = p2,
+								.uv0 = x0_uv, .uv1 = x1_uv, .uv2 = uv2,
+								.n0 = x0_n, .n1 = x1_n, .n2 = n2};
+					}
+					else
+					{
+						new_triangles[new_triangle_count++] = {.p0 = p0, .p1 = p1, .p2 = x0,
+								.uv0 = uv0, .uv1 = uv1, .uv2 = x0_uv,
+								.n0 = n0, .n1 = n1, .n2 = x0_n};
+						new_triangles[new_triangle_count++] = {.p0 = p1, .p1 = x1, .p2 = x0,
+								.uv0 = uv1, .uv1 = x1_uv, .uv2 = x0_uv,
+								.n0 = n1, .n1 = x1_n, .n2 = x0_n};
+					}
+
+					for (int k = 0; k < 2 - clip_up; k++)
+					{
+						Triangle *t = &new_triangles[new_triangle_count - k - 1];
+						float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
+						if (d < 0)
+						{
+							swap(t->p1, t->p2);
+							swap(t->uv1, t->uv2);
+							swap(t->n1, t->n2);
+						}
+					}
 				}
 			}
+			triangle_count = new_triangle_count;
+			for (int i = 0; i < new_triangle_count; i++)
+				triangles[i] = new_triangles[i];
 		}
 #if 1
 		for (int i = 0; i < triangle_count; i++)
@@ -1762,10 +1801,13 @@ extern "C" void game_update_and_render(Game *game)
 		{
 			int samples_per_dim = sqrtf(SAMPLES_PER_PIXEL);
 
+#if 1
 			if (SAMPLES_PER_PIXEL == 1)
 				game->samples_offset[sample] = V2(0.5f, 0.5f);
 			game->samples_offset[sample] = V2((sample % samples_per_dim) * (1.f / samples_per_dim) + 1.f / (samples_per_dim * 2),
 							(sample / samples_per_dim) * (1.f / samples_per_dim) + 1.f / (samples_per_dim * 2));
+#else
+#endif
 		}
 		game->is_initialized = 1;
     }
@@ -1860,22 +1902,22 @@ extern "C" void game_update_and_render(Game *game)
 
 
 	//draw_cube(game, V3(0, 0, -2), V3(0, 0, 0), 0.5, V3(1, 1, 1), 0, 0);
-	float d = 100;
-	//{
-	//	Triangle t = {};
+	float d = 1000;
+	{
+		Triangle t = {};
 
-	//	t.p0 = V3(-d, -1, d);
-	//	t.p1 = V3(d, -1, d);
-	//	t.p2 = V3(d, -1, -d);
-	//	t.uv0 = V2(0, 0);
-	//	t.uv1 = V2(d, 0);
-	//	t.uv2 = V2(d, d);
-	//	t.color = V3(.8, .1, .1);
-	//	t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
-	//	t.texture = &game->checkerboard_tex
-	//		;
-	//	draw_triangle(game, &t);
-	//}
+		t.p0 = V3(-d, -1, d);
+		t.p1 = V3(d, -1, d);
+		t.p2 = V3(d, -1, -d);
+		t.uv0 = V2(0, 0);
+		t.uv1 = V2(d, 0);
+		t.uv2 = V2(d, d);
+		t.color = V3(.6, .6, .6);
+		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
+		t.texture = &game->checkerboard_tex
+			;
+		draw_triangle(game, &t);
+	}
 	{
 		Triangle t = {};
 
@@ -1914,14 +1956,13 @@ extern "C" void game_update_and_render(Game *game)
 	//	t.color = V3(0.5, 0.5, 0.5);
 	//	draw_triangle(game, &t);
 	//}
-//	 draw_mesh(game, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V3(0.5, 0.8, 0.2));
-//
-//    draw_mesh(game, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
-//    draw_mesh(game, &game->starwars_mesh, V3(0, -0.5, -5), V3(1, 1, 1), V3(0, 0, 0));
-//    draw_mesh(game, &game->african_head_mesh, V3(-2, 1, -5), V3(1, 1, 1), V3(0, 0, 0));
-//
-//	draw_cube(game, game->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V3(1, 1, 1), 0, 0);
-    
+	draw_mesh(game, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V3(0.5, 0.8, 0.2));
+    draw_mesh(game, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
+    draw_mesh(game, &game->starwars_mesh, V3(0, -0.5, -5), V3(1, 1, 1), V3(0, 0, 0));
+    draw_mesh(game, &game->african_head_mesh, V3(-2, 1, -5), V3(1, 1, 1), V3(0, 0, 0));
+
+	draw_cube(game, game->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V3(1, 1, 1), 0, 0);
+
     game->animation_time += DT;
 
 

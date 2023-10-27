@@ -27,7 +27,7 @@
 #define BILINEAR_FILTERING 0
 
 #define MAX_SAMPLES_PER_PIXEL (32)
-#define SAMPLES_PER_PIXEL (1)
+#define SAMPLES_PER_PIXEL (4)
 
 
 #define THREADS 1
