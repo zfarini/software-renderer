@@ -23,8 +23,8 @@
 
 #include "math.h"
 
-#define THREADS 0
-#define CORE_COUNT (6)
+#define THREADS 1
+#define CORE_COUNT (4)
 #define CUBES_WIDTH 1
 #define CUBES_HEIGHT 1
 
@@ -76,7 +76,9 @@ typedef struct
 } Mesh;
 
 
-#include "renderer.h"
+
+
+struct Render_Context;
 
 typedef struct
 {
@@ -124,13 +126,19 @@ typedef struct
 
 	int is_mouse_left_pressed;
 
-	Render_Context render_context;
+	Render_Context *render_context;
+
+	volatile int next_thread_index;
+	volatile int next_tile_index;
+	volatile int thread_finished[CORE_COUNT];
 } Game;
 
 
 typedef void GameUpdateAndRenderFn(Game *game);
 typedef int GameThreadWorkFn(void *);
 
+
+#include "renderer.h"
 
 Texture load_texture(const char *filename);
 

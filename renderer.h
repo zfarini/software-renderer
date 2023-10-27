@@ -4,9 +4,8 @@
 #include "math.h"
 #include <immintrin.h>
 
-#define MAX_TRIANGLE_COUNT (100000)
-#define TILES_PER_WIDTH 8
-#define TILES_PER_HEIGHT 8
+#define TILES_PER_WIDTH 16
+#define TILES_PER_HEIGHT 16
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
 #define SAMPLES_PER_PIXEL (4)
 #define BILINEAR_FILTERING 0
@@ -48,6 +47,8 @@ struct Render_Context
 	v3 light_p;
 
 	Plane clip_planes[5];
+
+	Game *game;
 };
 
 //void begin_render(Render_Context *r);

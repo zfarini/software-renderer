@@ -151,23 +151,23 @@ Mesh load_mesh(const char *filename, Texture *texture = 0)
 
 extern "C" int game_thread_work(void *data)
 {
-#if 0
+#if 1
 	Game *game = (Game *)data;
 
-	int index = atomic_add_and_return_prev_value(&game->next_thread_index, 1);
+	int index = __sync_add_and_fetch(&game->next_thread_index, 1);
 
 	printf("lanched thread %d\n", index);
 	while (!game->thread_kill_yourself)
 	{
-		ThreadWork *work = get_next_thread_work(game);
+		int tile = __sync_fetch_and_add(&game->next_tile_index, 1);
 
-		if (!work)
+		if (tile >= TILES_COUNT)
 		{
-			usleep(1000);
+			__sync_lock_test_and_set(&game->thread_finished[index], 1);
+			usleep(100);
 			continue;
 		}
-		//printf("thread %d working on %d\n", index, work->index);
-		work->callback(work);
+		render_tile(game->render_context, tile);
 	}
 #endif
 
@@ -243,7 +243,8 @@ extern "C" void game_update_and_render(Game *game)
 		}
 
 
-		game->render_context = new_render_context(game->framebuffer, 0.05f, 1000, 60, 10000000);
+		game->render_context = (Render_Context *)malloc(sizeof(*game->render_context));
+		*game->render_context = new_render_context(game, game->framebuffer, 0.05f, 1000, 60, 10000000);
 		game->is_initialized = 1;
     }
 
@@ -263,7 +264,7 @@ extern "C" void game_update_and_render(Game *game)
 	float z = -4 + 3 * sin(game->time * 1.5);
 	v3 light_p = V3(x, 3, z);
 
-	Render_Context *r = &game->render_context;
+	Render_Context *r = game->render_context;
 
 	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.52, .8, .9), light_p);
 

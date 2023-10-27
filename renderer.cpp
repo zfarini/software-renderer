@@ -9,10 +9,12 @@
 #include "renderer.h"
 #include "game.h"
 
-Render_Context new_render_context(Texture framebuffer, float near_clip_plane, float far_clip_plane,
+Render_Context new_render_context(Game *game, Texture framebuffer, float near_clip_plane, float far_clip_plane,
 		float fov, int max_triangle_count)
 {
 	Render_Context r {};
+
+	r.game = game;
 
 	int samples_per_dim = sqrtf(SAMPLES_PER_PIXEL);
 	assert(samples_per_dim * samples_per_dim == SAMPLES_PER_PIXEL);
@@ -149,10 +151,15 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 	int triangle_count = 1;
 	Triangle new_triangles[16];
 
+//	if (dot(cross(triangle->p1 - triangle->p0, triangle->p2 - triangle->p0), r->camera_p - triangle->p0) <= 0)
+//		return ;
+
 	triangles[0] = *triangle;
 	triangles[0].p0 = world_to_camera(r, triangle->p0);
 	triangles[0].p1 = world_to_camera(r, triangle->p1);
 	triangles[0].p2 = world_to_camera(r, triangle->p2);
+
+
 		
 	for (int i = 0; i < ARRAY_LENGTH(r->clip_planes) && triangle_count; i++)
 	{
@@ -331,9 +338,8 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v3 color, T
         {p03, p02, p12, top}, {p03, p12, p13, top}, // up
         {p00, p11, p01, top, 1}, {p00, p10, p11, top, 1}, // down
     };
-    int n = sizeof(triangles) / sizeof(*triangles);
 
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < ARRAY_LENGTH(triangles); i++)
 	{
 
 		v2 uv0 = V2(0, 0), uv1 = V2(1, 0), uv2 = V2(1, 1);
@@ -686,6 +692,77 @@ void render_tile(Render_Context *r, int tile_index)
     	    for (int x = min_x; x < max_x; x++)
     	    {
 
+
+				__m128 Sx = _mm_set_ps(
+								r->samples_offset[0].x,
+								r->samples_offset[1].x,
+								r->samples_offset[2].x,
+								r->samples_offset[3].x);
+				__m128 Sy = _mm_set_ps(
+								r->samples_offset[0].y,
+								r->samples_offset[1].y,
+								r->samples_offset[2].y,
+								r->samples_offset[3].y);
+
+				__m128 Px = _mm_sub_ps(_mm_add_ps(_mm_set_ps1(x), Sx),
+							_mm_set_ps1(p0.x));
+				__m128 Py = _mm_sub_ps(_mm_add_ps(_mm_set_ps1(y), Sy),
+							_mm_set_ps1(p0.y));
+
+				__m128 malpha = _mm_mul_ps(_mm_set_ps1(det), 
+							_mm_add_ps(_mm_mul_ps(Px, _mm_set_ps1(v.y)),
+								       _mm_mul_ps(Py, _mm_set_ps1(-v.x))));
+										
+
+				__m128 mbeta = _mm_mul_ps(_mm_set_ps1(det), 
+							_mm_add_ps(_mm_mul_ps(Px, _mm_set_ps1(-u.y)),
+								       _mm_mul_ps(Py, _mm_set_ps1(u.x))));
+
+				__m128 mw0 = _mm_sub_ps(_mm_set_ps1(1),
+						_mm_add_ps(malpha, mbeta));
+				__m128 mw1 = malpha;
+				__m128 mw2 = mbeta;
+
+
+				__m128 mone_over_z = _mm_add_ps(
+						_mm_mul_ps(_mm_set_ps1(p0.z), mw0),
+						_mm_add_ps(
+							_mm_mul_ps(_mm_set_ps1(p1.z), mw1),
+							_mm_mul_ps(_mm_set_ps1(p2.z), mw2))
+						);
+				__m128 mz = _mm_div_ps(_mm_set_ps1(1), mone_over_z);
+
+
+				mw0 = _mm_mul_ps(mw0, _mm_mul_ps(mz, _mm_set_ps1(p0.z)));
+				mw1 = _mm_mul_ps(mw1, _mm_mul_ps(mz, _mm_set_ps1(p1.z)));
+				mw2 = _mm_mul_ps(mw2, _mm_mul_ps(mz, _mm_set_ps1(p2.z)));
+
+				__m128 mpx = _mm_add_ps(
+							_mm_mul_ps(_mm_set_ps1(tp0.x),
+									   mw0),
+							_mm_add_ps(
+								_mm_mul_ps(_mm_set_ps1(tp1.x),
+										   mw1),
+								_mm_mul_ps(_mm_set_ps1(tp2.x),
+										   mw2)));
+
+				__m128 mpy = _mm_add_ps(
+							_mm_mul_ps(_mm_set_ps1(tp0.y),
+									   mw0),
+							_mm_add_ps(
+								_mm_mul_ps(_mm_set_ps1(tp1.y),
+										   mw1),
+								_mm_mul_ps(_mm_set_ps1(tp2.y),
+										   mw2)));
+				__m128 mpz = _mm_add_ps(
+							_mm_mul_ps(_mm_set_ps1(tp0.z),
+									   mw0),
+							_mm_add_ps(
+								_mm_mul_ps(_mm_set_ps1(tp1.z),
+										   mw1),
+								_mm_mul_ps(_mm_set_ps1(tp2.z),
+										   mw2)));
+
 				for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
 				{
 					v2 poffset = r->samples_offset[sample];
@@ -695,8 +772,13 @@ void render_tile(Render_Context *r, int tile_index)
 					{
                        v3 p = pixel_p - p0;
 					   // TODO: change this into the edge method
-	 				   float alpha = p.x * v.y * det + p.y * (-v.x) * det;
+#if 0
+					   float alpha = p.x * v.y * det + p.y * (-v.x) * det;
 	 				   float beta = p.x * (-u.y) * det + p.y * u.x * det;
+#else
+						float alpha = ((float *)&malpha)[sample];
+						float beta = ((float *)&mbeta)[sample];
+#endif
 	
 					   if (alpha < 0 || beta < 0 || alpha + beta > 1)
 						   continue ;
@@ -706,12 +788,17 @@ void render_tile(Render_Context *r, int tile_index)
 					   w2 = beta;
 					}
 
-					float one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
-					float z = 1.f / one_over_z;
-
+	//				float one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
+		//			float z = 1.f / one_over_z;
+					
+					float z = ((float *)&mz)[sample];
 					w0 *= z * p0.z;
 					w1 *= z * p1.z;
 					w2 *= z * p2.z;
+
+					//w0 = ((float *)&mw0)[sample];
+					//w1 = ((float *)&mw1)[sample];
+					//w2 = ((float *)&mw2)[sample];
 
 					v3 p = tp0 * w0 + tp1 * w1 + tp2 * w2;
 
@@ -860,6 +947,33 @@ void render_tile(Render_Context *r, int tile_index)
 
 void end_render(Render_Context *r)
 {
+#if THREADS
+	for (int i = 1; i < CORE_COUNT; i++)
+		__sync_lock_test_and_set(&r->game->thread_finished[i], 0);
+	__sync_lock_test_and_set(&r->game->next_tile_index, 0);
+
+
+	
+	while (1)
+	{
+		int tile = __sync_fetch_and_add(&r->game->next_tile_index, 1);	
+
+		if (tile >= TILES_COUNT)
+			break ;
+		render_tile(r, tile);
+	}
+	while (1)
+	{
+		int finished = 1;
+		for (int i = 1; i < CORE_COUNT; i++)
+			if (!r->game->thread_finished[i])
+				finished = 0;
+		usleep(100);
+		if (finished)
+			break ;
+	}
+#else
 	for (int i = 0; i < TILES_COUNT; i++)
 		render_tile(r, i);
+#endif
 }

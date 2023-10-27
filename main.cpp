@@ -103,6 +103,7 @@ int main(void)
     Game *game = (Game *)calloc(1, sizeof(*game));
     game->framebuffer.width  = backbuffer_width;
     game->framebuffer.height = backbuffer_height;
+	game->next_tile_index = TILES_COUNT;
 
 #if CODE_RELOADING
 	char *dll_name = get_game_dll_name();
