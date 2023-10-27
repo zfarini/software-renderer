@@ -2,7 +2,7 @@
 #include "math.h"
 #include "SDL/SDL.h"
 #include "SDL/SDL_thread.h"
-
+#include <dirent.h>
 #include "dlfnc.h"
 #include <time.h>
 #include <sys/stat.h> 
@@ -23,9 +23,7 @@ time_t get_last_write_time(const char *filename)
     return result;
 }
 
-#include <dirent.h>
-
-char *get_new_dllname(char *prev_name)
+char *get_game_dll_name()
 {
 	DIR *dir = opendir(".");
 	assert(dir);
@@ -39,29 +37,18 @@ char *get_new_dllname(char *prev_name)
 		int l = strlen(filename);
 		if (l >= 7 && !strncmp(filename, "game", 4) && !strcmp(filename + l - 3, ".so"))
 		{
-			if ((!prev_name || strcmp(prev_name, filename))
-				&& (!dllname || get_last_write_time(filename) > get_last_write_time(dllname))
-				&& (!prev_name || get_last_write_time(filename) > get_last_write_time(prev_name)))
+			if (!dllname || get_last_write_time(filename) > get_last_write_time(dllname))
 				dllname = filename;
 		}
 	}
-	
-	if (!dllname)
-		dllname = prev_name;
-	else
-		dllname = strdup(dllname);
-
 	assert(dllname);
-
+	dllname = strdup(dllname);
 	closedir(dir);
 	return dllname;
 }
 
-void *open_dll(char **name)
+void *open_dll(char *dllname)
 {
-	char *dllname = get_new_dllname(*name);
-
-	*name = dllname;
 	void *dll = dlopen(dllname, RTLD_LAZY);
 	assert(dll);
 	return dll;
@@ -69,55 +56,69 @@ void *open_dll(char **name)
 
 int main(void)
 {
-    Game *game = (Game *)calloc(1, sizeof(*game));
-	
-    game->width = 512;
-    game->height = 512;
+	int window_width = 512;
+	int window_height = 512;
 
+	int backbuffer_width = window_width;
+	int backbuffer_height = window_height;
 
-	assert(game->width % TILES_PER_WIDTH == 0);
-	assert(game->width % TILES_PER_HEIGHT == 0);
+	assert(backbuffer_width  % TILES_PER_WIDTH == 0);
+	assert(backbuffer_height % TILES_PER_HEIGHT == 0);
 
-	int relative_mouse_mode = 0;
+    if (SDL_Init(SDL_INIT_VIDEO))
+	{
+		fprintf(stderr, "SDL FAILURE: %s\n", SDL_GetError());
+		return 1;
+	}
 
+    SDL_Window *window = SDL_CreateWindow("game", 0, 0,
+                                          window_width, window_height, SDL_WINDOW_SHOWN);
+	if (!window)
+	{
+		fprintf(stderr, "SDL FAILURE: %s\n", SDL_GetError());
+		return 1;
+	}
 
-    SDL_Init(SDL_INIT_VIDEO);
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);//|SDL_RENDERER_PRESENTVSYNC);
+	if (!renderer)
+	{
+		fprintf(stderr, "SDL FAILURE: %s\n", SDL_GetError());
+		return 1;
+	}
 
-    SDL_Window *window = SDL_CreateWindow("texor", 0, 0,
-                                          game->width, game->height, SDL_WINDOW_SHOWN);
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
-
+    SDL_RenderSetLogicalSize(renderer, backbuffer_width, backbuffer_width);
+    SDL_RenderSetIntegerScale(renderer, (SDL_bool)1);
+    SDL_Texture *screen_texture = SDL_CreateTexture(renderer,
+                                                    SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING,
+                                                    backbuffer_width, backbuffer_height);
+	if (!screen_texture)
+	{
+		fprintf(stderr, "SDL FAILURE: %s\n", SDL_GetError());
+		return 1;
+	}
 
 	SDL_SetRelativeMouseMode((SDL_bool)0);
+
+	// @Memory
+    Game *game = (Game *)calloc(1, sizeof(*game));
+    game->width = backbuffer_width;
+    game->height = backbuffer_height;
+
 #if CODE_RELOADING
-	char *dllname = 0;
-    void *dll = open_dll(&dllname);
+	char *dll_name = get_game_dll_name();
+    void *dll = open_dll(dll_name);
     GameUpdateAndRenderFn *game_update_and_render = (GameUpdateAndRenderFn *)
             dlsym(dll, "game_update_and_render");
     GameThreadWorkFn *game_thread_work = (GameThreadWorkFn *)
             dlsym(dll, "game_thread_work");
-
-    assert(dll);
-	printf("%s\n", dllname);
     assert(game_update_and_render && game_thread_work);
-
 #endif
+
 #if THREADS
-		 SDL_Thread *thread_ids[CORE_COUNT];
-		 for (int i = 1; i < CORE_COUNT; i++)
-			 thread_ids[i] = SDL_CreateThread(game_thread_work, 0, game);
+	SDL_Thread *thread_ids[CORE_COUNT];
+	for (int i = 1; i < CORE_COUNT; i++)
+		thread_ids[i] = SDL_CreateThread(game_thread_work, 0, game);
 #endif
-
-    SDL_SetWindowMinimumSize(window, game->width, game->height);
-    //TODO: should these takes window or back_buffer width/height
-    SDL_RenderSetLogicalSize(renderer, game->width, game->height);
-    SDL_RenderSetIntegerScale(renderer, (SDL_bool)1);
-    SDL_Texture *screen_texture = SDL_CreateTexture(renderer,
-                                                    SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING,
-                                                    game->width, game->height);
-	game->pixels = (uint32_t *)malloc(game->width * game->height * sizeof(uint32_t));
-
-	assert(window && renderer && screen_texture && game->pixels);
 
 	int mouse_left_button_is_down = 0;
 
@@ -130,12 +131,10 @@ int main(void)
 	while (!game->should_quit)
 	{
 #if CODE_RELOADING
-        { // TODO: kill threads and reload their function??
-		
+        { 
+			char *new_dll_name = get_game_dll_name();
 
-
-			char *new_name = get_new_dllname(dllname);
-			if (new_name != dllname)
+			if (get_last_write_time(new_dll_name) > get_last_write_time(dll_name))
             {
 				printf("updating dll...\n");
 #if THREADS
@@ -144,10 +143,9 @@ int main(void)
 					SDL_WaitThread(thread_ids[i], 0);
 				game->thread_kill_yourself = 0;
 #endif
-				unlink(dllname);
-				dllname = new_name;
+				unlink(dll_name);
 				dlclose(dll);
-                dll = open_dll(&dllname);
+                dll = open_dll(new_dll_name);
                 game_update_and_render = (GameUpdateAndRenderFn *)
                     dlsym(dll, "game_update_and_render");
     			game_thread_work = (GameThreadWorkFn *)
@@ -159,7 +157,11 @@ int main(void)
 				for (int i = 1; i < CORE_COUNT; i++)
 			 		thread_ids[i] = SDL_CreateThread(game_thread_work, 0, game);
 #endif
+				free(dll_name);
+				dll_name = new_dll_name;
 			}
+			else
+				free(new_dll_name);
 		}
 #endif
 
@@ -185,48 +187,47 @@ int main(void)
         	     if (ev.button.button == SDL_BUTTON_LEFT)
 					 mouse_left_button_is_down = !(mouse_left_button_is_down);
         	}
-			else if (ev.type == SDL_MOUSEMOTION && (mouse_left_button_is_down || relative_mouse_mode))
+			else if (ev.type == SDL_MOUSEMOTION && (mouse_left_button_is_down || SDL_GetRelativeMouseMode()))
 			{
-				int sign = relative_mouse_mode ? -1 : 1;
+				int sign = SDL_GetRelativeMouseMode() ? -1 : 1;
 				game->camera_rotation.y += sign * ev.motion.xrel * (PI * DT * 0.1f);
 				game->camera_rotation.x += sign * ev.motion.yrel * (PI * DT * 0.1f);
 			}
-//          else if (ev.type == SDL_MOUSEWHEEL)
-//          {
-//              input.mouse_scroll_y = ev.wheel.y;
-//          }
-
-
 		}
 		float dx = 8;
 
 		game->camera_dp = V3(0, 0, 0);
 
-         if (is_pressed[SDLK_ESCAPE])
-             game->should_quit = 1;
-		 if (is_pressed[SDLK_w])
-		 	game->camera_dp += +dx * game->camera_z;
-		 if (is_pressed[SDLK_a])
-		 	game->camera_dp += -dx * game->camera_x;
-		 if (is_pressed[SDLK_s])
-		 	game->camera_dp += -dx * game->camera_z;
-		 if (is_pressed[SDLK_d])
-		 	game->camera_dp += +dx * game->camera_x;
-		 if (is_pressed[SDLK_q])
-		 	game->camera_dp += +dx * game->camera_y;
-		 if (is_pressed[SDLK_e])
-			game->camera_dp += -dx * game->camera_y;
-		 if (is_pressed[SDLK_r])
-			 game->camera_rotation.z += 0.01f * PI;
-		 if (is_pressed[SDLK_f])
-			 game->camera_rotation.z -= 0.01f * PI;
-		 if (is_pressed[SDLK_SPACE] && !was_pressed[SDLK_SPACE])
-		 {
-		 	relative_mouse_mode = !relative_mouse_mode;
-		 	SDL_SetRelativeMouseMode((SDL_bool)!SDL_GetRelativeMouseMode());
-		 }
+		if (is_pressed[SDLK_ESCAPE])
+		    game->should_quit = 1;
+		if (is_pressed[SDLK_w])
+			game->camera_dp += game->camera_z;
+		if (is_pressed[SDLK_a])
+			game->camera_dp += -game->camera_x;
+		if (is_pressed[SDLK_s])
+			game->camera_dp += -game->camera_z;
+		if (is_pressed[SDLK_d])
+			game->camera_dp += game->camera_x;
+		if (is_pressed[SDLK_q])
+			game->camera_dp += game->camera_y;
+		if (is_pressed[SDLK_e])
+		   game->camera_dp += -game->camera_y;
+		if (is_pressed[SDLK_r])
+		    game->camera_rotation.z += 0.01f * PI;
+		if (is_pressed[SDLK_f])
+		    game->camera_rotation.z -= 0.01f * PI;
+
+		game->camera_dp = noz(game->camera_dp) * dx;
+
+		if (is_pressed[SDLK_SPACE] && !was_pressed[SDLK_SPACE])
+			SDL_SetRelativeMouseMode((SDL_bool)!SDL_GetRelativeMouseMode());
 			
-		 game->is_mouse_left_pressed = mouse_left_button_is_down;
+		game->is_mouse_left_pressed = mouse_left_button_is_down;
+
+		int pitch;
+		SDL_LockTexture(screen_texture, 0, (void **)(&game->pixels), &pitch);
+		assert(pitch == game->width * 4);
+
 		game_update_and_render(game);
 		
 		{
@@ -235,10 +236,9 @@ int main(void)
 			SDL_SetWindowTitle(window, s);
 		}
 
-        SDL_RenderClear(renderer); // TODO: is this necessary?
-        SDL_UpdateTexture(screen_texture, NULL, game->pixels, game->width * sizeof(uint32_t));
+		SDL_UnlockTexture(screen_texture);
         SDL_RenderCopy(renderer, screen_texture, NULL, NULL);
         SDL_RenderPresent(renderer);
 	}
-	unlink(dllname);
+	unlink(dll_name);
 }
