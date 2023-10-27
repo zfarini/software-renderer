@@ -350,4 +350,328 @@ internal v3 reflect(v3 a, v3 n)
 {
 	return a - 2 * dot(a, n) * n;
 }
+
+#include <immintrin.h>
+
+struct lane_f32
+{
+    __m256 v;
+};
+
+struct lane_u32
+{
+    __m256i v;
+};
+
+struct lane_v2
+{
+    lane_f32 x;
+    lane_f32 y;
+};
+
+
+internal lane_u32 LaneU32(int x)
+{
+    lane_u32 res;
+
+    res.v = _mm256_set1_epi32(x);
+    return res;
+}
+
+internal lane_u32 LaneU32(int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7)
+{
+    lane_u32 res;
+
+ //   res.v = _mm256_set_epi32(x0, x1, x2, x3, x4, x5, x6, x7);
+    res.v = _mm256_set_epi32(x7, x6, x5, x4, x3, x2, x1, x0);
+    return res;
+}
+
+internal lane_u32 operator+(lane_u32 a, lane_u32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_add_epi32(a.v, b.v);
+    return res;
+}
+
+internal lane_u32 operator>>(lane_u32 a, int shift)
+{
+    lane_u32 res;
+
+    res.v = _mm256_srli_epi32(a.v, shift);
+    return res;
+}
+
+internal lane_u32 operator&(lane_u32 a, int value)
+{
+    lane_u32 res;
+
+    res.v = _mm256_and_si256(a.v, LaneU32(value).v);
+    return res;
+}
+
+internal lane_u32 operator&(lane_u32 a, lane_u32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_and_si256(a.v, b.v);
+    return res;
+}
+
+internal lane_u32 operator<<(lane_u32 a, int shift)
+{
+    lane_u32 res;
+
+    res.v = _mm256_slli_epi32(a.v, shift);
+    return res;
+}
+
+
+
+
+
+
+// lane_f32
+
+
+
+internal lane_f32 LaneF32(float x)
+{
+    lane_f32 res;
+
+    res.v = _mm256_set1_ps(x);
+    return res;
+}
+
+internal lane_f32 LaneF32(lane_u32 x)
+{
+    lane_f32 res;
+
+    res.v = _mm256_castsi256_ps(x.v);
+    return res;
+}
+
+internal lane_f32 LaneF32(__m256 x)
+{
+    lane_f32 res;
+
+    res.v = x;
+    return res;
+}
+
+internal lane_f32 operator+(lane_f32 a, lane_f32 b)
+{
+    lane_f32 res;
+
+    res.v = _mm256_add_ps(a.v, b.v);
+    return res;
+}
+
+internal lane_f32 operator-(lane_f32 a, lane_f32 b)
+{
+    lane_f32 res;
+
+    res.v = _mm256_sub_ps(a.v, b.v);
+    return res;
+}
+
+internal lane_f32 operator*(lane_f32 a, lane_f32 b)
+{
+    lane_f32 res;
+
+    res.v = _mm256_mul_ps(a.v, b.v);
+    return res;
+}
+
+internal lane_f32 operator*(lane_f32 a, float b)
+{
+    return a * LaneF32(b);
+}
+
+internal lane_f32 operator*(float b, lane_f32 a)
+{
+    return a * b;
+}
+
+internal lane_f32 operator/(lane_f32 a, lane_f32 b)
+{
+    lane_f32 res;
+
+    res.v = _mm256_div_ps(a.v, b.v);
+    return res;
+}
+
+
+internal lane_u32 operator<(lane_f32 a, lane_f32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_cmp_ps(a.v, b.v, _CMP_LT_OS);
+
+    return res;
+}
+
+
+internal lane_u32 operator>(lane_f32 a, lane_f32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_cmp_ps(a.v, b.v, _CMP_GT_OS);
+
+    return res;
+}
+
+internal lane_u32 operator>=(lane_f32 a, lane_f32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_cmp_ps(a.v, b.v, _CMP_GE_OS);
+
+    return res;
+}
+
+internal lane_u32 operator<=(lane_f32 a, lane_f32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_cmp_ps(a.v, b.v, _CMP_LE_OS);
+
+    return res;
+}
+// lane v2
+
+
+internal lane_v2 LaneV2(lane_f32 x, lane_f32 y)
+{
+    lane_v2 res;
+
+    res.x = x;
+    res.y = y;
+    return res;
+}
+
+internal lane_v2 operator+(lane_v2 a, lane_v2 b)
+{
+    lane_v2 res;
+
+    res.x = a.x + b.x;
+    res.y = a.y + b.y;
+
+    return res;
+}
+
+internal lane_v2 operator-(lane_v2 a, lane_v2 b)
+{
+    lane_v2 res;
+
+    res.x = a.x - b.x;
+    res.y = a.y - b.y;
+
+    return res;
+}
+
+internal lane_v2 operator*(lane_v2 a, lane_v2 b)
+{
+    lane_v2 res;
+
+    res.x = a.x * b.x;
+    res.y = a.y * b.y;
+
+    return res;
+}
+
+
+struct lane_v3
+{
+    __m256 x;
+    __m256 y;
+    __m256 z;
+};
+
+#define LANE_WIDTH 8
+
+
+
+internal lane_v3 operator+(lane_v3 a, lane_v3 b)
+{
+    lane_v3 res;
+
+    res.x = _mm256_add_ps(a.x, b.x);
+    res.y = _mm256_add_ps(a.y, b.y);
+    res.z = _mm256_add_ps(a.z, b.z);
+
+    return res;
+}
+
+internal lane_v3 operator-(lane_v3 a, lane_v3 b)
+{
+    lane_v3 res;
+
+    res.x = _mm256_sub_ps(a.x, b.x);
+    res.y = _mm256_sub_ps(a.y, b.y);
+    res.z = _mm256_sub_ps(a.z, b.z);
+
+    return res;
+}
+    
+internal lane_v3 operator*(lane_v3 a, lane_v3 b)
+{
+    lane_v3 res;
+
+    res.x = _mm256_mul_ps(a.x, b.x);
+    res.y = _mm256_mul_ps(a.y, b.y);
+    res.z = _mm256_mul_ps(a.z, b.z);
+
+    return res;
+}
+
+internal lane_v3 operator*(lane_v3 a, float b)
+{
+    lane_v3 res;
+
+    __m256 v = _mm256_set1_ps(b);
+
+    res.x = _mm256_mul_ps(a.x, v);
+    res.y = _mm256_mul_ps(a.y, v);
+    res.z = _mm256_mul_ps(a.z, v);
+
+    return res;
+}
+
+internal lane_v3 operator*(float b, lane_v3 a)
+{
+    return a * b;
+}
+
+internal lane_v3 operator/(lane_v3 a, lane_v3 b)
+{
+    lane_v3 res;
+
+    res.x = _mm256_div_ps(a.x, b.x);
+    res.y = _mm256_div_ps(a.y, b.y);
+    res.z = _mm256_div_ps(a.z, b.z);
+
+    return res;
+}
+
+internal lane_v3 operator/(lane_v3 a, float b)
+{
+    lane_v3 res;
+
+    __m256 v = _mm256_set1_ps(b);
+
+    res.x = _mm256_div_ps(a.x, v);
+    res.y = _mm256_div_ps(a.y, v);
+    res.z = _mm256_div_ps(a.z, v);
+
+    return res;
+}
+
+//__m256 lane_v3 dot(lane_v3 a, lane_v3 b)
+//{
+//
+//}
+
+
 #endif

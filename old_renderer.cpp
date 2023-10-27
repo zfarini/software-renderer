@@ -687,65 +687,52 @@ void render_tile(Render_Context *r, int tile_index)
 			continue;
 		det = 1 / det;
 
-        lane_f32 samples_offset_x[SAMPLES_PER_PIXEL] = {};
-        lane_f32 samples_offset_y[SAMPLES_PER_PIXEL] = {};
-
     	for (int y = min_y; y < max_y; y++)
     	{
  //   	    for (int x = min_x; x < max_x; x++)
-            for (int ix = 0; ix < (max_x - min_x) * SAMPLES_PER_PIXEL; ix += LANE_WIDTH)
+            for (int ix = 0; ix < (max_x - min_x) * SAMPLES_PER_PIXEL; ix += 8)
     	    {
 
-                lane_u32 lane_ix = LaneU32(0, 1, 2, 3, 4, 5, 6, 7) + LaneU32(ix);
+                int x = min_x + ix / SAMPLES_PER_PIXEL;
+                int sample = ix % SAMPLES_PER_PIXEL;
+				int buffer_index = y * r->buffer_aa.width + x * SAMPLES_PER_PIXEL + sample;
 
-                lane_u32 x = LaneU32(min_x) + 
-                        (lane_ix >> SAMPLES_PER_PIXEL);
+	//			for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
+				{
+					v2 poffset = r->samples_offset[sample];
 
- //               lane_u32 sample = lane_ix & (SAMPLES_PER_PIXEL - 1);
-                
+					v3 pixel_p = V3(x + poffset.x, y + poffset.y, 0);
+					float w0, w1, w2;
+					{
+                       v3 p = pixel_p - p0;
+					   float alpha = p.x * v.y * det + p.y * (-v.x) * det;
+	 				   float beta = p.x * (-u.y) * det + p.y * u.x * det;
+					   if (alpha < 0 || beta < 0 || alpha + beta > 1)
+						   continue ;
+					   w0 = 1 - alpha - beta;
+					   w1 = alpha;
+					   w2 = beta;
+					}
 
-                
-                lane_v2 pixel_offset;
-
-                pixel_offset.x = samples_offset_x[ix & (SAMPLES_PER_PIXEL - 1)];
-                pixel_offset.y = samples_offset_y[ix & (SAMPLES_PER_PIXEL - 1)];
-
-                lane_v2 pixel_p = pixel_offset + LaneV2(LaneF32(x), LaneF32(y));
-
-                lane_v2 p = pixel_p - LaneV2(LaneF32(p0.x), LaneF32(p0.y));
-
-
-                
-                lane_f32 w1 = LaneF32(det) * (p.x * LaneF32(v.y)  + p.y * LaneF32(-v.x));
-                lane_f32 w2 = LaneF32(det) * (p.x * LaneF32(-u.y) + p.y * LaneF32(u.x));
-                lane_f32 w0 = LaneF32(1) - (w1 + w2);
-
-                lane_u32 mask = (w1 >= LaneF32(0)) & (w2 >= LaneF32(0)) & (w0 < LaneF32(1))
-                        & (w1 < LaneF32(1)) & (w2 < LaneF32(1)) & (w0 > LaneF32(0));
-
-                if (_mm256_testz_si256(mask.v, mask.v))
-                    continue ;
-
-                lane_f32 one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
-                lane_f32 z = LaneF32(1) / one_over_z;
+					float one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
+					float z = 1.f / one_over_z;
+					
+					w0 *= z * p0.z;
+					w1 *= z * p1.z;
+					w2 *= z * p2.z;
 
 
-
-                int buffer_index = y * r->buffer_aa.width + (min_x * SAMPLES_PER_PIXEL + ix);
-
-                __m256 zbuf = _mm256_load_ps(r->zbuffer + buffer_index);
+					v3 p = tp0 * w0 + tp1 * w1 + tp2 * w2;
 
 
- //               mask = mask & (z < LaneF32(zbuf));
+					if (z >= r->zbuffer[buffer_index])
+						continue ;
 
-                uint32_t color32 = color_v3_to_u32(t->color);
-                lane_u32 c = LaneU32(color32);
+					r->zbuffer[buffer_index] = z;
 
-                _mm256_maskstore_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask.v, c.v);
-   //             _mm256_maskstore_ps((r->zbuffer + buffer_index), mask.v, z.v);
 
-	    	   	//r->buffer_aa.pixels[buffer_index] = color_v3_to_u32(t->color);
-   #if 0
+	    	   		r->buffer_aa.pixels[buffer_index] = color_v3_to_u32(t->color);
+#if 0
                     v2 uv = uv0 * w0 + uv1 * w1 + uv2 * w2;
 
 					v3 texture_color = V3(1, 1, 1);
@@ -852,6 +839,7 @@ void render_tile(Render_Context *r, int tile_index)
 						c.b = 1;
 	    	   		r->buffer_aa.pixels[buffer_index] = color_v3_to_u32(c);
 #endif
+				}
     	    }
 		}
 

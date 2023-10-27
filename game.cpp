@@ -244,7 +244,7 @@ extern "C" void game_update_and_render(Game *game)
 
 
 		game->render_context = (Render_Context *)malloc(sizeof(*game->render_context));
-		*game->render_context = new_render_context(game, game->framebuffer, 0.05f, 1000, 60, 10000000);
+		*game->render_context = new_render_context(game, game->framebuffer, 0.05f, 1000, 60, 100000);
 		game->is_initialized = 1;
     }
 
