@@ -101,8 +101,8 @@ int main(void)
 
 	// @Memory
     Game *game = (Game *)calloc(1, sizeof(*game));
-    game->width = backbuffer_width;
-    game->height = backbuffer_height;
+    game->framebuffer.width  = backbuffer_width;
+    game->framebuffer.height = backbuffer_height;
 
 #if CODE_RELOADING
 	char *dll_name = get_game_dll_name();
@@ -224,12 +224,10 @@ int main(void)
 			
 		game->is_mouse_left_pressed = mouse_left_button_is_down;
 
-		int pitch;
-		SDL_LockTexture(screen_texture, 0, (void **)(&game->pixels), &pitch);
-		assert(pitch == game->width * 4);
+		SDL_LockTexture(screen_texture, 0, (void **)(&game->framebuffer.pixels), &game->framebuffer.pitch);
+		assert(game->framebuffer.pitch % 4 == 0);
 
 		game_update_and_render(game);
-		
 		{
 			char s[128];
 			snprintf(s, sizeof(s), "%.2fms %.2fms", game->last_frame_time, game->total_time / (game->frame + 1));
@@ -240,5 +238,5 @@ int main(void)
         SDL_RenderCopy(renderer, screen_texture, NULL, NULL);
         SDL_RenderPresent(renderer);
 	}
-	unlink(dll_name);
+	//unlink(dll_name);
 }

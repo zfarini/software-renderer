@@ -32,6 +32,15 @@ typedef struct
 #define internal static
 #endif
 
+internal float max(float a, float b)
+{
+	return a > b ? a : b;
+}
+
+internal float min(float a, float b)
+{
+	return a < b ? a : b;
+}
 
 internal float square(float a)
 {

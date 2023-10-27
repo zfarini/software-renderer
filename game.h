@@ -23,26 +23,10 @@
 
 #include "math.h"
 
-
-#define BILINEAR_FILTERING 0
-
-#define MAX_SAMPLES_PER_PIXEL (32)
-#define SAMPLES_PER_PIXEL (4)
-
-
-#define THREADS 1
-
-#define MAX_TRIANGLE_COUNT (100000)
-#define TILES_PER_WIDTH 8
-#define TILES_PER_HEIGHT 8
-#define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
-
+#define THREADS 0
 #define CORE_COUNT (6)
 #define CUBES_WIDTH 1
 #define CUBES_HEIGHT 1
-
-#define MAX_TRIANGLE_COUNT_PER_TILE (MAX_TRIANGLE_COUNT)
-
 
 typedef struct ThreadWork ThreadWork;
 
@@ -91,23 +75,16 @@ typedef struct
     v3 scale;
 } Mesh;
 
+
+#include "renderer.h"
+
 typedef struct
 {
-    int width;
-    int height;
-	uint32_t *pixels;
-	uint32_t *pixels_aa;
+    Texture framebuffer;
 
 	int is_mouse_down;
 	int prev_mouse_x;
 	int prev_mouse_y;
-
-	v3 P, dP, ddP;
-
-	int triangle_count;
-	int triangle_count2;
-	Triangle *triangles;
-	Triangle *triangles2;
 
 	int should_quit;
 	float last_frame_time;
@@ -115,13 +92,7 @@ typedef struct
 	v3 camera_p, camera_rotation, camera_x, camera_y, camera_z;
 	v3 camera_dp;
 	m3x3 camera_inv_rotation_mat, camera_rotation_mat;
-	float fov;
-	float near_clip_plane;
-	float far_clip_plane;
-	float film_width, film_height;
-	float top, bottom, left, right;
-	float focal_length;
-	float *zbuffer;
+
 	int is_initialized;
 
     float cubes_height[CUBES_HEIGHT][CUBES_WIDTH];
@@ -130,34 +101,7 @@ typedef struct
 	float total_time;
 	int frame;
 
-	int go_in, go_back;
-
-
-
-	v2 samples_offset[MAX_SAMPLES_PER_PIXEL];
-
-
-	int triangles_per_tile[TILES_COUNT][MAX_TRIANGLE_COUNT_PER_TILE];
-	int triangles_per_tile_count[TILES_COUNT];
-
-	volatile int next_work_index;
-	int real_work_count;
-	volatile int work_count;
-	ThreadWork *thread_work; // this should loop
-	volatile int next_thread_index;
-
 	v3 light_p;
-	v3 light_dir;
-
-	int shadow_map_width;
-	int shadow_map_height;
-	float shadow_map_left;
-	float shadow_map_right;
-	float shadow_map_top;
-	float shadow_map_bottom;
-
-	m3x3 light_inv_rot_matrix;
-	float *shadow_map;
 
 	Texture grass_tex;
 	Texture grass_top_tex;
@@ -165,9 +109,6 @@ typedef struct
 	Texture checkerboard_tex;
 	Texture ground_tex;
 	Texture gun_tex;
-
-	ThreadWork *curr_thread_work;
-
 
     Mesh cow_mesh;
     Mesh monkey_mesh;
@@ -178,23 +119,12 @@ typedef struct
 	Texture african_head_tex;
 
     Mesh starwars_animation[116];
-    float animation_time;
 
 	int thread_kill_yourself;
 
 	int is_mouse_left_pressed;
 
-	struct {
-		v3 p;
-		v3 dp;
-		v3 u, v;
-		float lifetime;
-		v3 color;
-	} bullets[4096];
-
-	float hit_time;
-
-	int bullet_count;
+	Render_Context render_context;
 } Game;
 
 
@@ -203,5 +133,7 @@ typedef int GameThreadWorkFn(void *);
 
 
 Texture load_texture(const char *filename);
+
+
 
 #endif
