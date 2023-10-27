@@ -6,7 +6,7 @@
 #include <sys/stat.h> 
 #include <pthread.h>
 
-#define CODE_RELOADING 0
+#define CODE_RELOADING 1
 
 #if (!CODE_RELOADING)
 #include "game.cpp"
@@ -20,6 +20,50 @@ time_t get_last_write_time(const char *filename)
     if(stat(filename, &file_status) == 0)
         result = file_status.st_mtime;
     return result;
+}
+
+#include <dirent.h>
+
+char *get_new_dllname(char *prev_name)
+{
+	DIR *dir = opendir(".");
+	assert(dir);
+
+	struct dirent *entry;
+	char *dllname = 0;
+
+	while ((entry = readdir(dir)))
+	{
+		char *filename = entry->d_name;
+		int l = strlen(filename);
+		if (l >= 7 && !strncmp(filename, "game", 4) && !strcmp(filename + l - 3, ".so"))
+		{
+			if ((!prev_name || strcmp(prev_name, filename))
+				&& (!dllname || get_last_write_time(filename) > get_last_write_time(dllname))
+				&& (!prev_name || get_last_write_time(filename) > get_last_write_time(prev_name)))
+				dllname = filename;
+		}
+	}
+	
+	if (!dllname)
+		dllname = prev_name;
+	else
+		dllname = strdup(dllname);
+
+	assert(dllname);
+
+	closedir(dir);
+	return dllname;
+}
+
+void *open_dll(char **name)
+{
+	char *dllname = get_new_dllname(*name);
+
+	*name = dllname;
+	void *dll = dlopen(dllname, RTLD_LAZY);
+	assert(dll);
+	return dll;
 }
 
 int main(void)
@@ -45,14 +89,22 @@ int main(void)
 
 	SDL_SetRelativeMouseMode((SDL_bool)0);
 #if CODE_RELOADING
-    const char *dll_name = "game.so";
-    time_t dll_last_write_time = get_last_write_time(dll_name);
-    void *dll = dlopen(dll_name, RTLD_LAZY);
+	char *dllname = 0;
+    void *dll = open_dll(&dllname);
     GameUpdateAndRenderFn *game_update_and_render = (GameUpdateAndRenderFn *)
             dlsym(dll, "game_update_and_render");
-    assert(dll);
-    assert(game_update_and_render);
+    GameThreadWorkFn *game_thread_work = (GameThreadWorkFn *)
+            dlsym(dll, "game_thread_work");
 
+    assert(dll);
+	printf("%s\n", dllname);
+    assert(game_update_and_render && game_thread_work);
+
+#endif
+#if THREADS
+		 pthread_t thread_ids[CORE_COUNT];
+		 for (int i = 1; i < CORE_COUNT; i++)
+			 pthread_create(&thread_ids[i], 0, game_thread_work, game);
 #endif
 
     SDL_SetWindowMinimumSize(window, game->width, game->height);
@@ -78,21 +130,36 @@ int main(void)
 	{
 #if CODE_RELOADING
         { // TODO: kill threads and reload their function??
-            time_t wt = get_last_write_time(dll_name);
-            if (wt != dll_last_write_time)
+		
+
+
+			char *new_name = get_new_dllname(dllname);
+			if (new_name != dllname)
             {
 				printf("updating dll...\n");
-                dll_last_write_time = wt;
-                dlclose(dll);
-                dll = dlopen(dll_name, RTLD_LAZY);
+#if THREADS
+				game->thread_kill_yourself = 1;
+				for (int i = 1; i < CORE_COUNT; i++)
+					pthread_join(thread_ids[i], NULL);
+				game->thread_kill_yourself = 0;
+#endif
+				unlink(dllname);
+				dllname = new_name;
+				dlclose(dll);
+                dll = open_dll(&dllname);
                 game_update_and_render = (GameUpdateAndRenderFn *)
                     dlsym(dll, "game_update_and_render");
-            }
-            if (!dll)
-                printf("ERROR: failed to load dll\n");
-            else if (!game_update_and_render)
-                printf("ERROR: failed to load game_update_and_render\n");
-        }
+    			game_thread_work = (GameThreadWorkFn *)
+            		dlsym(dll, "game_thread_work");
+
+				assert(game_update_and_render && game_thread_work);
+#if THREADS
+				game->next_thread_index = 0;
+				for (int i = 1; i < CORE_COUNT; i++)
+			 		pthread_create(&thread_ids[i], 0, game_thread_work, game);
+#endif
+			}
+		}
 #endif
 
 		for (int i = 0; i < ARRAY_LENGTH(was_pressed); i++)

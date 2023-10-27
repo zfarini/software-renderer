@@ -1,7 +1,6 @@
 #ifndef GAME_H
 #define GAME_H
 
-#include "mlx/mlx.h"
 #include <math.h>
 #include <stdio.h>
 #include <float.h>
@@ -28,12 +27,12 @@
 #define BILINEAR_FILTERING 0
 
 #define MAX_SAMPLES_PER_PIXEL (32)
-#define SAMPLES_PER_PIXEL (4)
+#define SAMPLES_PER_PIXEL (1)
 
 
 #define THREADS 1
 
-#define MAX_TRIANGLE_COUNT (6000000)
+#define MAX_TRIANGLE_COUNT (100000)
 #define TILES_PER_WIDTH 8
 #define TILES_PER_HEIGHT 8
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
@@ -51,7 +50,7 @@ typedef struct ThreadWork ThreadWork;
 
 typedef THREAD_WORK_FUNC(ThreadWorkCallbackFn);
 
-struct alignas(max_align_t) ThreadWork
+struct alignas(16) ThreadWork
 {
 	uint8_t data[65536];
 	
@@ -59,7 +58,7 @@ struct alignas(max_align_t) ThreadWork
 	ThreadWorkCallbackFn *callback;
 
 	int index;
-	volatile _Atomic int finished;
+	volatile int finished;
 };
 
 struct Texture
@@ -105,8 +104,8 @@ typedef struct
 
 	v3 P, dP, ddP;
 
-	volatile _Atomic int triangle_count;
-	volatile _Atomic int triangle_count2;
+	int triangle_count;
+	int triangle_count2;
 	Triangle *triangles;
 	Triangle *triangles2;
 
@@ -139,13 +138,13 @@ typedef struct
 
 
 	int triangles_per_tile[TILES_COUNT][MAX_TRIANGLE_COUNT_PER_TILE];
-	volatile _Atomic int triangles_per_tile_count[TILES_COUNT];
+	int triangles_per_tile_count[TILES_COUNT];
 
-	volatile _Atomic int next_work_index;
+	volatile int next_work_index;
 	int real_work_count;
-	volatile _Atomic int work_count;
+	volatile int work_count;
 	ThreadWork *thread_work; // this should loop
-	volatile _Atomic int next_thread_index;
+	volatile int next_thread_index;
 
 	v3 light_p;
 	v3 light_dir;
@@ -177,10 +176,15 @@ typedef struct
 
     Mesh starwars_animation[116];
     float animation_time;
+
+	int thread_kill_yourself;
 } Game;
 
 
 typedef void GameUpdateAndRenderFn(Game *game);
 typedef void *GameThreadWorkFn(void *);
+
+
+Texture load_texture(const char *filename);
 
 #endif

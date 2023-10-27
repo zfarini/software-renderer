@@ -1,12 +1,13 @@
 #include "game.h"
 #include "math.h"
 #include <stdlib.h>
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
 
 #define print_v3(v) printf("%s = (%f, %f, %f)\n", #v, v.x, v.y, v.z)
 
-
+#define atomic_write(ptr, value) __sync_lock_test_and_set(ptr, value)
+#define atomic_compare_exchange(ptr, old_value, new_value) \
+		__sync_bool_compare_and_swap(ptr, old_value, new_value)
+#define atomic_add_and_return_prev_value(ptr, value) __sync_fetch_and_add(ptr, value)
 
 void swap(float &a, float &b)
 {
@@ -221,47 +222,6 @@ float ray_intersect_plane(v3 plane_normal, float d, v3 ray_origin, v3 ray_dir)
 	return (-d - dot(plane_normal, ray_origin)) / denom;
 }
 
-
-Texture load_texture(const char *filename)
-{
-    Texture tex;
-
-    int w, h, n;
-    unsigned char *pixels = stbi_load(filename, &w, &h, &n, 4);
-    if (!pixels)
-    {
-        printf("failed to load %s\n", filename);
-        assert(0);
-    }
-    assert(n == 3 || n == 4);
-    tex.width = w;
-    tex.height = h;
-	tex.pitch = w;
-    tex.pixels = (uint32_t *)malloc(w * h * sizeof(*tex.pixels));
-    //pixels are 0xRRGGBBAA
-    uint32_t *pixel = (uint32_t *)pixels;
-    for (int y = 0; y < tex.height; y++)
-    {
-        for (int x = 0; x < tex.width; x++)
-        {
-            uint32_t p = *pixel;
-            uint32_t r = (p >> 0)  & 0xFF;
-            uint32_t g = (p >> 8)  & 0xFF;
-            uint32_t b = (p >> 16) & 0xFF;
-            uint32_t a = (p >> 24) & 0xFF;
-
-			uint32_t *dest = tex.pixels + (h - y - 1) * tex.width + x;
-			*dest = (r << 24) | (g << 16) | (b << 8) | a;
-
-            pixel++;
-        }
-    }
-    printf("loaded %s %d %d\n", filename, w, h);
-    stbi_image_free(pixels);
-    return tex;
-}
-
-
 float max(float a, float b)
 {
 	return a > b ? a : b;
@@ -390,19 +350,11 @@ THREAD_WORK_FUNC(render_tile_work)
 
  		v3 u = p1 - p0;
  		v3 v = p2 - p0;
- 		float det = u.x * v.y - v.x * u.y;
 
- 		if (fabsf(det) < 0.0001f)
-			continue;
 
-		det = 1 / det;
+ //       float one_over_area = 1.f / edge(p0, p1, p2);
 
-        float one_over_area = 1.f / edge(p0, p1, p2);
-
-        v3 w = cross(tp1 - tp0, tp2 - tp0);
-		v3 normal = noz(w);
-        w /= dot(w, w);
-
+		v3 normal = noz(cross(tp1 - tp0, tp2 - tp0));
 
 		v2 uv0 = t->uv0;// * p0.z;
 		v2 uv1 = t->uv1;// * p1.z;
@@ -417,6 +369,16 @@ THREAD_WORK_FUNC(render_tile_work)
 		if (min_y < clip_min_y) min_y = clip_min_y;
 		if (max_x > clip_max_x) max_x = clip_max_x;
 		if (max_y > clip_max_y) max_y = clip_max_y;
+
+		// TODO!!!!!!!!!!!!!: this can overflow (not sure if we should just avoid big triangles)
+ 		double det = (double)u.x * v.y - (double)v.x * u.y;
+
+ 		if (fabs(det) < 0.0001f)
+			continue;
+
+		det = 1 / det;
+
+	//	float one_over_area = 1.f / edge(p0, p1, p2);
 
     	for (int y = min_y; y < max_y; y++)
     	{
@@ -442,13 +404,17 @@ THREAD_WORK_FUNC(render_tile_work)
 					   w1 = alpha;
 					   w2 = beta;
 #else
-	 				   v3 p = V3(x + poffset.x, y + poffset.y, 0);
-						b.w = edge(p1, p2, p);
-						b.u = edge(p2, p0, p);
-						b.v = edge(p0, p1, p);
-						if (b.u < 0 || b.v < 0 || b.w < 0)
+	 				   //v3 p = V3(x + poffset.x, y + poffset.y, 0);
+						
+					   w0 = edge(p1, p2, p);
+						w1 = edge(p2, p0, p);
+						w2 = edge(p0, p1, p);
+						if (w0 < 0 || w1 < 0 || w2 < 0)
 							continue;
-						b *= one_over_area;
+
+						w0 *= one_over_area;
+						w1 *= one_over_area;
+						w2 *= one_over_area;
 #endif
 					}
 					float one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
@@ -535,17 +501,18 @@ THREAD_WORK_FUNC(render_tile_work)
 						float light_strength = 10;
 
 
-						diffuse *= (1.0 / square(length(light_p - p))) * light_strength;
+				//		diffuse *= (1.0 / square(length(light_p - p))) * light_strength;
 				
 						v3 reflected = reflect(light_p - p, n);
 						float specular = powf(max(0, dot(noz(reflected), noz(p))), 20);
 
-						ambient = V3(0, 0, 0);
+
+
 						v3 c =  (ambient * 0.2  + V3(diffuse, diffuse, diffuse)* 0.8)
 								+ V3(specular, specular, specular);
 						
 						// should specular also be multiplied?
-						c *= texture_color * t->color;
+						c = texture_color * t->color;
 		
 #if 0
 						{
@@ -624,7 +591,8 @@ THREAD_WORK_FUNC(render_tile_work)
 	    	   				 ((uint32_t)(sqrtf(color.b) * 255 + 0.5f) << 8);
 		}
 	}
-	work->finished = 1;
+	
+	atomic_write(&work->finished, 1);
 
 	return 0;
 }
@@ -639,13 +607,6 @@ ThreadWork *add_thread_work(Game *game)
 
 inline ThreadWork *get_next_thread_work(Game *game)
 {
-#if 0
-	if (game->next_work_index >= game->work_count)
-		return 0;
-	return &game->thread_work[game->next_work_index++];
-
-#else
-	
 #if 1
 	while (1)
 	{
@@ -653,7 +614,7 @@ inline ThreadWork *get_next_thread_work(Game *game)
 	
 		if (work_index >= game->work_count)
 			return 0;
-		if (atomic_compare_exchange_weak(&game->next_work_index, &work_index, work_index + 1))
+		if (atomic_compare_exchange(&game->next_work_index, work_index, work_index + 1))
 			return &game->thread_work[work_index];	
 	}
 	return 0;
@@ -663,7 +624,6 @@ inline ThreadWork *get_next_thread_work(Game *game)
 	if (index >= game->work_count)
 		return 0;
 	return &game->thread_work[index];
-#endif
 #endif
 }
 
@@ -1038,6 +998,7 @@ THREAD_WORK_FUNC(draw_triangle_work)
 			t->p0 = sp0, t->p1 = sp1, t->p2 = sp2;
 			t->uv0 = uv0, t->uv1 = uv1, t->uv2 = uv2;
 
+
 			t->p0 = camera_to_world(game, t->p0);
 			t->p1 = camera_to_world(game, t->p1);
 			t->p2 = camera_to_world(game, t->p2);
@@ -1109,7 +1070,7 @@ THREAD_WORK_FUNC(draw_triangle_work)
 		}
 #endif
 	}
-	work->finished = 1;
+	atomic_write(&work->finished, 1);
 	return (0);
 }
 
@@ -1168,7 +1129,8 @@ void draw_triangles(Game *game)
 	
 		if (d0 + d1 + d2 == 0)
 		{
-			triangles[triangle_count++] = Triangle{.p0 = cp0, .p1 = cp1, .p2 = cp2, .uv0 = triangle->uv0, .uv1 = triangle->uv1, .uv2 = triangle->uv2};
+			triangles[triangle_count++] = Triangle{.p0 = cp0, .p1 = cp1, .p2 = cp2, .uv0 = triangle->uv0, .uv1 = triangle->uv1, .uv2 = triangle->uv2,
+				.n0 = triangle->n0, .n1 = triangle->n1, .n2 = triangle->n2};
 		}
 		else if (d0 + d1 + d2 != 3)
 		{
@@ -1183,109 +1145,58 @@ void draw_triangles(Game *game)
 
 			v3 p0 = cp0, p1 = cp1, p2 = cp2;
 			v2 uv0 = triangle->uv0, uv1 = triangle->uv1, uv2 = triangle->uv2;
+			v3 n0 = triangle->n0, n1 = triangle->n1, n2 = triangle->n2;
 
 			int swp = 0;
 
 			if ((clip_up && !d0) || (!clip_up && d0))
-				swap(p0, p2), swap(uv0, uv2), swp = 1;
+				swap(p0, p2), swap(uv0, uv2), swap(n0, n2), swp = 1;
 			else if ((clip_up && !d1) || (!clip_up && d1))
-				swap(p1, p2), swap(uv1, uv2), swp = 2;
+				swap(p1, p2), swap(uv1, uv2), swap(n1, n2), swp = 2;
 
 			v3 x0 = p2 - ((game->near_clip_plane + p2.z) / (p0.z - p2.z)) * (p0 - p2);
 			v3 x1 = p2 - ((game->near_clip_plane + p2.z) / (p1.z - p2.z)) * (p1 - p2);
 
-			v2 x0_uv = lerp(uv0, length(x0 - p0) / length(p2 - p0), uv2);
-			v2 x1_uv = lerp(uv1, length(x1 - p1) / length(p2 - p1) , uv2);
+			float t0 = length(x0 - p0) / length(p2 - p0);
+			float t1 = length(x1 - p1) / length(p2 - p1);
+
+			v2 x0_uv = lerp(uv0, t0, uv2);
+			v2 x1_uv = lerp(uv1, t1, uv2);
+			
+			v3 x0_n = noz(lerp(n0, t0, n2));
+			v3 x1_n = noz(lerp(n1, t1, n2));
+
 
 			if (clip_up)
 			{
 				triangles[triangle_count++] = Triangle{.p0 = x0, .p1 = x1, .p2 = p2,
-						.uv0 = x0_uv, .uv1 = x1_uv, .uv2 = uv2};
+						.uv0 = x0_uv, .uv1 = x1_uv, .uv2 = uv2,
+						.n0 = x0_n, .n1 = x1_n, .n2 = n2};
 			}
 			else
 			{
 				triangles[triangle_count++] = {.p0 = p0, .p1 = p1, .p2 = x0,
-						.uv0 = uv0, .uv1 = uv1, .uv2 = x0_uv};
+						.uv0 = uv0, .uv1 = uv1, .uv2 = x0_uv,
+						.n0 = n0, .n1 = n1, .n2 = x0_n};
 				triangles[triangle_count++] = {.p0 = p1, .p1 = x1, .p2 = x0,
-						.uv0 = uv1, .uv1 = x1_uv, .uv2 = x0_uv};
+						.uv0 = uv1, .uv1 = x1_uv, .uv2 = x0_uv,
+						.n0 = n1, .n1 = x1_n, .n2 = x0_n};
 			}
 
 			v3 normal = cross(cp1 - cp0, cp2 - cp0);
+
 			for (int i = 0; i < triangle_count; i++)
 			{
 				
 				Triangle *t = &triangles[i];
 
 				float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
-#if 0
-
 				if (d < 0)
 				{
-					swap(triangles[i].p1, triangles[i].p2);
-					swap(triangles[i].uv1, triangles[i].uv2);
+					swap(t->p1, t->p2);
+					swap(t->uv1, t->uv2);
+					swap(t->n1, t->n2);
 				}
-				else if (!d)
-				{
-					d = dot(cross(cp2 - cp1, cp2 - cp0), cross(t->p2 - t->p1, t->p2 - t->p0));
-
-					if (d < 0)
-					{
-						swap(triangles[i].p0, triangles[i].p1);
-						swap(triangles[i].uv0, triangles[i].uv1);
-					}
-				}
-#else
-				if (!clip_up)
-				{
-					if (swp == 1 || swp == 2)
-					{
-						swap(triangles[0].p1, triangles[0].p2);
-						swap(triangles[0].uv1, triangles[0].uv2);
-
-					}
-					if (swp == 2)
-					{
-						swap(triangles[1].p1, triangles[1].p2);
-						swap(triangles[1].uv1, triangles[1].uv2);
-					}
-	//				else if (swp == 2)
-	//				{
-	//					swap(triangles[0].p1, triangles[0].p2);
-	//					swap(triangles[0].uv1, triangles[0].uv2);
-	//				}
-					float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
-
-					assert(d >= 0);
-					break ;
-				}
-				else
-				{
-
-				//float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
-				//if (d < 0)
-				//{
-				//	swap(triangles[i].p1, triangles[i].p2);
-				//	swap(triangles[i].uv1, triangles[i].uv2);
-				//}
-				//break ;
-				//assert(triangle_count == 1);
-					if (swp == 1)
-					{
-						swap(triangles[0].p1, triangles[0].p2);
-						swap(triangles[0].uv1, triangles[0].uv2);
-					}
-					else if (swp == 2)
-					{
-						swap(triangles[0].p0, triangles[0].p2);
-						swap(triangles[0].uv0, triangles[0].uv2);
-					}
-
-					//float d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
-
-					//assert(d >= 0);
-					break ;
-				}
-#endif
 			}
 		}
 #if 1
@@ -1296,13 +1207,8 @@ void draw_triangles(Game *game)
 			Triangle *t = &triangles[i];
 
 	
-			v3 sp0 = t->p0, sp1 = t->p1, sp2 = t->p2;
-			v2 uv0 = t->uv0, uv1 = t->uv1, uv2 = t->uv2;
-
-			*t = *triangle;
-
-			t->p0 = sp0, t->p1 = sp1, t->p2 = sp2;
-			t->uv0 = uv0, t->uv1 = uv1, t->uv2 = uv2;
+			t->texture = triangle->texture;
+			t->color = triangle->color;
 
 			t->p0 = camera_to_world(game, t->p0);
 			t->p1 = camera_to_world(game, t->p1);
@@ -1319,9 +1225,9 @@ void draw_triangles(Game *game)
 			t->screen_p1 = p1;
 			t->screen_p2 = p2;
 	
-	    	t->min_x = floorf(tmin.x);
+	    	t->min_x = floorf(tmin.x) - 1;
 	    	t->max_x = floorf(tmax.x) + 1;
-	    	t->min_y = floorf(tmin.y);
+	    	t->min_y = floorf(tmin.y) - 1;
 	    	t->max_y = floorf(tmax.y) + 1;
 	
 	    	if (t->min_x < 0) t->min_x = 0;
@@ -1477,7 +1383,7 @@ void draw_line(Game *game, v3 p0, v3 p1, v3 color = V3(1, 1, 1), float thickness
 
 
 
-	float line_length = length(p1 - p0);
+	float line_length = length(p1.xy - p0.xy);
 
 	v2 p0_v2 = V2(p0.x, p0.y);
 
@@ -1618,7 +1524,6 @@ void draw_sphere(Game *game, v3 center, float radius, v3 color)
 	if (max_y > game->height) max_y = game->height;
 
 	v3 light_p = world_to_camera(game, V3(3, 5, 0));//world_to_camera(game, game->light_p);
-
 	for (int y = min_y; y < max_y; y++)
 	{
 		for (int x = min_x; x < max_x; x++)
@@ -1739,10 +1644,10 @@ extern "C" void *game_thread_work(void *data)
 {
 	Game *game = (Game *)data;
 
-	int index = ++game->next_thread_index;
+	int index = atomic_add_and_return_prev_value(&game->next_thread_index, 1);
 
 	printf("lanched thread %d\n", index);
-	while (1)
+	while (!game->thread_kill_yourself)
 	{
 		ThreadWork *work = get_next_thread_work(game);
 
@@ -1788,11 +1693,7 @@ extern "C" void game_update_and_render(Game *game)
 
 	if (!game->is_initialized)
     {
-#if THREADS
-		 pthread_t thread_ids[CORE_COUNT];
-		 for (int i = 1; i < CORE_COUNT; i++)
-			 pthread_create(&thread_ids[i], 0, game_thread_work, game);
-#endif
+
 
         game->starwars_tex = load_texture("starwars.png");
 		game->grass_tex = load_texture("grass.png");
@@ -1817,13 +1718,9 @@ extern "C" void game_update_and_render(Game *game)
 			game->cow_mesh.triangles[i].uv1 *= 20;
 			game->cow_mesh.triangles[i].uv2 *= 20;
 		}
-
-
         game->monkey_mesh = load_mesh("monkey.obj");
 		game->african_head_tex = load_texture("african_head.png");
 		game->african_head_mesh = load_mesh("african_head.obj", &game->african_head_tex);
-
-
 
 
 		game->shadow_map_width = game->width * 2;
@@ -1845,7 +1742,6 @@ extern "C" void game_update_and_render(Game *game)
 		game->right = game->film_width * 0.5f;
 		game->bottom = -game->top;
 		game->left = -game->right;
-
 
 		game->triangles = (Triangle *)malloc(sizeof(*game->triangles) * MAX_TRIANGLE_COUNT);
 		game->triangles2 = (Triangle *)malloc(sizeof(*game->triangles) * MAX_TRIANGLE_COUNT);
@@ -1885,7 +1781,8 @@ extern "C" void game_update_and_render(Game *game)
 	game->camera_p  += game->camera_dp * DT;
 
 	{
-		game->near_clip_plane = 0.125f;
+		// TODO: pick a good value
+		game->near_clip_plane = 0.05f;
 		game->far_clip_plane = 1000;
 		game->fov = 60;
         game->film_width = tan((game->fov*0.5f) * DEG_TO_RAD) * 2 * game->near_clip_plane;
@@ -1963,40 +1860,45 @@ extern "C" void game_update_and_render(Game *game)
 
 
 	//draw_cube(game, V3(0, 0, -2), V3(0, 0, 0), 0.5, V3(1, 1, 1), 0, 0);
+	float d = 100;
+	//{
+	//	Triangle t = {};
+
+	//	t.p0 = V3(-d, -1, d);
+	//	t.p1 = V3(d, -1, d);
+	//	t.p2 = V3(d, -1, -d);
+	//	t.uv0 = V2(0, 0);
+	//	t.uv1 = V2(d, 0);
+	//	t.uv2 = V2(d, d);
+	//	t.color = V3(.8, .1, .1);
+	//	t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
+	//	t.texture = &game->checkerboard_tex
+	//		;
+	//	draw_triangle(game, &t);
+	//}
 	{
 		Triangle t = {};
 
-		t.p0 = V3(-1000, -1, 1000);
-		t.p1 = V3(1000, -1, 1000);
-		t.p2 = V3(1000, -1, -1000);
+		t.p0 = V3(-d, -1, d);
+		t.p1 = V3(d, -1, -d);
+		t.p2 = V3(-d, -1, -d);
 		t.uv0 = V2(0, 0);
-		t.uv1 = V2(1000, 0);
-		t.uv2 = V2(1000, 1000);
+		t.uv1 = V2(d, d);
+		t.uv2 = V2(0, d);
+		t.color = V3(.6 , .6 ,.6);
 		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
-		t.color = V3(.6, .6, .6);
-		t.texture = &game->ground_tex;
+		t.texture = &game->checkerboard_tex;
 		draw_triangle(game, &t);
 	}
-	{
-		Triangle t = {};
 
-		t.p0 = V3(-1000, -1, 1000);
-		t.p1 = V3(1000, -1, -1000);
-		t.p2 = V3(-1000, -1, -1000);
-		t.uv0 = V2(0, 0);
-		t.uv1 = V2(1000, 1000);
-		t.uv2 = V2(0, 1000);
-		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
-		t.color = V3(.6, .6, .6);
-		t.texture = &game->ground_tex;
-		draw_triangle(game, &t);
-	}
+
+	
 
 	float x = 3 * cos(game->time * 1.5);
 	float z = -4 + 3 * sin(game->time * 1.5);
 	v3 sphere = V3(x, 3, z);
-	sphere = V3(0, 0, -2);
-	draw_sphere(game, sphere, 0.7, V3(0.9, 0.2, 0.2));
+	//sphere = V3(0, 0, -2);
+	//draw_sphere(game, sphere, 0.7, V3(0.9, 0.2, 0.2));
 
 	game->light_p = sphere;
 	//{
@@ -2012,11 +1914,13 @@ extern "C" void game_update_and_render(Game *game)
 	//	t.color = V3(0.5, 0.5, 0.5);
 	//	draw_triangle(game, &t);
 	//}
-	 draw_mesh(game, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V3(0.5, 0.8, 0.2));
-
-    draw_mesh(game, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
-    draw_mesh(game, &game->starwars_mesh, V3(0, -0.5, -5), V3(1, 1, 1), V3(0, 0, 0));
-    draw_mesh(game, &game->african_head_mesh, V3(-2, 1, -5), V3(1, 1, 1), V3(0, 0, 0));
+//	 draw_mesh(game, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V3(0.5, 0.8, 0.2));
+//
+//    draw_mesh(game, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
+//    draw_mesh(game, &game->starwars_mesh, V3(0, -0.5, -5), V3(1, 1, 1), V3(0, 0, 0));
+//    draw_mesh(game, &game->african_head_mesh, V3(-2, 1, -5), V3(1, 1, 1), V3(0, 0, 0));
+//
+//	draw_cube(game, game->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V3(1, 1, 1), 0, 0);
     
     game->animation_time += DT;
 

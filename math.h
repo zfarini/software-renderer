@@ -3,18 +3,24 @@
 
 #include <math.h>
 
+typedef union
+{
+	struct { float x, y; };
+	struct { float u, v; };
+} v2;
+
 typedef union 
 {
     struct {float x, y, z;};
     struct {float r, g, b;};
     struct {float u, v, w;};
 	float e[3];
-} v3;
 
-typedef struct
-{
-    float x, y;
-} v2;
+
+	struct {
+		v2 xy;
+	};
+} v3;
 
 typedef struct 
 {

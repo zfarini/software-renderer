@@ -1,8 +1,17 @@
-FLAGS="-std=c++11 -O3 -mavx -ffast-math libSDL2-2.0.0.dylib  mlx/libmlx.a -framework OpenGL -framework AppKit" #-fsanitize=address -fsanitize=undefined
+FLAGS="-std=c++11 -O3  -mavx libSDL2-2.0.0.dylib"
 
+#compiler="/Users/zfarini/goinfre/homebrew/Cellar/gcc/13.2.0/bin/g++-13  -fno-gnu-unique "
+compiler="clang++"
+#
 #echo $FLAGS
-#clang++ $FLAGS game.cpp -fPIC -shared -o game.so.tmp
-#mv game.so.tmp game.so
 
-clang++ main.cpp $FLAGS 
+random_number=$((1 + $RANDOM % 1000))
+
+
+clang++ $FLAGS game.cpp stb_load_png.o -fPIC -shared -o game.so.tmp
+mv game.so.tmp game$random_number.so
+
+$compiler main.cpp $FLAGS
+
+#clang++ main.cpp -ldl $FLAGS
 
