@@ -1,10 +1,11 @@
 #include "game.h"
 #include "math.h"
 #include "SDL/SDL.h"
+#include "SDL/SDL_thread.h"
+
 #include "dlfnc.h"
 #include <time.h>
 #include <sys/stat.h> 
-#include <pthread.h>
 
 #define CODE_RELOADING 1
 
@@ -102,9 +103,9 @@ int main(void)
 
 #endif
 #if THREADS
-		 pthread_t thread_ids[CORE_COUNT];
+		 SDL_Thread *thread_ids[CORE_COUNT];
 		 for (int i = 1; i < CORE_COUNT; i++)
-			 pthread_create(&thread_ids[i], 0, game_thread_work, game);
+			 thread_ids[i] = SDL_CreateThread(game_thread_work, 0, game);
 #endif
 
     SDL_SetWindowMinimumSize(window, game->width, game->height);
@@ -140,7 +141,7 @@ int main(void)
 #if THREADS
 				game->thread_kill_yourself = 1;
 				for (int i = 1; i < CORE_COUNT; i++)
-					pthread_join(thread_ids[i], NULL);
+					SDL_WaitThread(thread_ids[i], 0);
 				game->thread_kill_yourself = 0;
 #endif
 				unlink(dllname);
@@ -156,7 +157,7 @@ int main(void)
 #if THREADS
 				game->next_thread_index = 0;
 				for (int i = 1; i < CORE_COUNT; i++)
-			 		pthread_create(&thread_ids[i], 0, game_thread_work, game);
+			 		thread_ids[i] = SDL_CreateThread(game_thread_work, 0, game);
 #endif
 			}
 		}
@@ -225,6 +226,7 @@ int main(void)
 		 	SDL_SetRelativeMouseMode((SDL_bool)!SDL_GetRelativeMouseMode());
 		 }
 			
+		 game->is_mouse_left_pressed = mouse_left_button_is_down;
 		game_update_and_render(game);
 		
 		{
@@ -238,4 +240,5 @@ int main(void)
         SDL_RenderCopy(renderer, screen_texture, NULL, NULL);
         SDL_RenderPresent(renderer);
 	}
+	unlink(dllname);
 }

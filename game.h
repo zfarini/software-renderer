@@ -164,6 +164,7 @@ typedef struct
     Texture starwars_tex;
 	Texture checkerboard_tex;
 	Texture ground_tex;
+	Texture gun_tex;
 
 	ThreadWork *curr_thread_work;
 
@@ -171,18 +172,34 @@ typedef struct
     Mesh cow_mesh;
     Mesh monkey_mesh;
     Mesh starwars_mesh;
+	Mesh gun_mesh;
 	Mesh african_head_mesh;
+	Mesh map_mesh;
 	Texture african_head_tex;
 
     Mesh starwars_animation[116];
     float animation_time;
 
 	int thread_kill_yourself;
+
+	int is_mouse_left_pressed;
+
+	struct {
+		v3 p;
+		v3 dp;
+		v3 u, v;
+		float lifetime;
+		v3 color;
+	} bullets[4096];
+
+	float hit_time;
+
+	int bullet_count;
 } Game;
 
 
 typedef void GameUpdateAndRenderFn(Game *game);
-typedef void *GameThreadWorkFn(void *);
+typedef int GameThreadWorkFn(void *);
 
 
 Texture load_texture(const char *filename);

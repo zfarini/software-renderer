@@ -196,6 +196,7 @@ Mesh load_mesh(const char *filename, Texture *texture = 0)
 		if (*line == '\n') line++;
 	}
 
+	printf("loaded %d triangles\n", mesh.triangle_count);
 
 
     float s = 1.f / max_abs;
@@ -517,6 +518,7 @@ THREAD_WORK_FUNC(render_tile_work)
 							fog = max(0, 1 - (d - 10) / 50.f);
 
 						// should specular also be multiplied?
+						fog = 1;
 						c *= texture_color * t->color * fog;
 		
 #if 0
@@ -1138,6 +1140,7 @@ void draw_triangles(Game *game)
 		//	continue ;
 		Triangle triangles[16];
 		int triangle_count = 1;
+		Triangle new_triangles[16];
 
 		triangles[0] = *triangle;
 		triangles[0].p0 = world_to_camera(game, triangle->p0);
@@ -1146,11 +1149,9 @@ void draw_triangles(Game *game)
 		
 
 
-		for (int i = 0; i < ARRAY_LENGTH(planes); i++)
+		for (int i = 0; i < ARRAY_LENGTH(planes) && triangle_count; i++)
 		{
-			Triangle new_triangles[16];
 			int new_triangle_count = 0;
-
 			for (int j = 0; j < triangle_count; j++)
 			{
 
@@ -1186,14 +1187,8 @@ void draw_triangles(Game *game)
 					else if ((clip_up && !d1) || (!clip_up && d1))
 						swap(p1, p2), swap(uv1, uv2), swap(n1, n2), swp = 2;
 
-#if 0
-					v3 x0 = p2 - ((game->near_clip_plane + p2.z) / (p0.z - p2.z)) * (p0 - p2);
-					v3 x1 = p2 - ((game->near_clip_plane + p2.z) / (p1.z - p2.z)) * (p1 - p2);
-#else
-
 					v3 x0 = p2 + ((-planes[i].d - dot(p2, planes[i].normal)) / dot(p0 - p2, planes[i].normal)) * (p0 - p2);
 					v3 x1 = p2 + ((-planes[i].d - dot(p2, planes[i].normal)) / dot(p1 - p2, planes[i].normal)) * (p1 - p2);
-#endif
 
 					float t0 = length(x0 - p0) / length(p2 - p0);
 					float t1 = length(x1 - p1) / length(p2 - p1);
@@ -1671,15 +1666,15 @@ void draw_mesh(Game *game, Mesh *mesh, v3 position, v3 scale, v3 rotation, v3 co
 		//if (i % 2)
 		{
 			float f = 0.001f;
-	//		draw_line(game, c, c + normal * 0.1f, nc, f);
-	//		draw_line(game, t.p0, t.p1, color, f);
-	//		draw_line(game, t.p0, t.p2, color, f);
-	//		draw_line(game, t.p1, t.p2, color, f);
+		//	draw_line(game, c, c + normal * 0.1f, nc, f);
+			//draw_line(game, t.p0, t.p1, color, f);
+			//draw_line(game, t.p0, t.p2, color, f);
+			//draw_line(game, t.p1, t.p2, color, f);
 		}
     }
 }
 
-extern "C" void *game_thread_work(void *data)
+extern "C" int game_thread_work(void *data)
 {
 	Game *game = (Game *)data;
 
@@ -1738,6 +1733,7 @@ extern "C" void game_update_and_render(Game *game)
 		game->grass_tex = load_texture("grass.png");
 		game->grass_top_tex = load_texture("grass_top.png");
 		game->ground_tex = load_texture("ground.png");
+		game->gun_tex = load_texture("gun_tex.png");
 
 		{
 			Texture *t = &game->checkerboard_tex;
@@ -1748,6 +1744,7 @@ extern "C" void game_update_and_render(Game *game)
 		}
 
         game->starwars_mesh = load_mesh("starwars.obj",  &game->starwars_tex);
+		game->gun_mesh = load_mesh("gun.obj", &game->gun_tex);
 
         game->cow_mesh = load_mesh("cow.obj", &game->checkerboard_tex);
 
@@ -1757,6 +1754,7 @@ extern "C" void game_update_and_render(Game *game)
 			game->cow_mesh.triangles[i].uv1 *= 20;
 			game->cow_mesh.triangles[i].uv2 *= 20;
 		}
+
         game->monkey_mesh = load_mesh("monkey.obj");
 		game->african_head_tex = load_texture("african_head.png");
 		game->african_head_mesh = load_mesh("african_head.obj", &game->african_head_tex);
@@ -1942,6 +1940,55 @@ extern "C" void game_update_and_render(Game *game)
 	//sphere = V3(0, 0, -2);
 	//draw_sphere(game, sphere, 0.7, V3(0.9, 0.2, 0.2));
 
+	for (int j = 0; j < game->bullet_count; j++)
+	{
+		game->bullets[j].lifetime -= DT;
+		if (game->bullets[j].lifetime < 0)
+		{
+			game->bullets[j] = game->bullets[game->bullet_count - 1];
+			j--;
+			continue ;
+		}
+		game->bullets[j].p += game->camera_z * DT * 10;
+		float radius = 0.01f;
+
+		draw_cube(game, game->bullets[j].p, game->bullets[j].u, game->bullets[j].v, game->bullets[j].dp, V3(radius, radius, radius), game->bullets[j].color, 0, 0);
+
+	}
+	v3 gun_p = game->camera_p + game->camera_z - 0.5f * game->camera_y;
+
+	if (game->hit_time >= 0)
+		gun_p = gun_p - game->camera_z * 0.4 + game->camera_z * ((0.3 - game->hit_time) / 0.3) * 0.4;
+
+	if (game->is_mouse_left_pressed)
+	{
+		int bullet_count = 1;
+
+		game->hit_time = 0.3f;
+		int j = game->bullet_count;
+
+		for (int i = 0; i < bullet_count; i++)
+		{
+			if (j >= ARRAY_LENGTH(game->bullets))
+				break ;
+			float dx = ((float)rand() / RAND_MAX - 0.5f) * 0.1;
+			float dy = ((float)rand() / RAND_MAX - 0.5f) * 0.1;
+			float r = (float)rand() / RAND_MAX;
+
+
+			game->bullets[j].p = gun_p + game->camera_z * 1 + dx * game->camera_x + dy * game->camera_y;
+			game->bullets[j].u = game->camera_x;
+			game->bullets[j].v = game->camera_y;
+			game->bullets[j].dp = game->camera_z;
+			game->bullets[j].color = V3(r, r, r);
+			game->bullets[j].lifetime = 15;
+			j++;
+			game->bullet_count++;
+		}
+	}
+
+
+	game->hit_time -= DT;
 	game->light_p = sphere;
 	//{
 	//	Triangle t = {};
@@ -1961,7 +2008,12 @@ extern "C" void game_update_and_render(Game *game)
     draw_mesh(game, &game->starwars_mesh, V3(0, -0.5, -5), V3(1, 1, 1), V3(0, 0, 0));
     draw_mesh(game, &game->african_head_mesh, V3(-2, 1, -5), V3(1, 1, 1), V3(0, 0, 0));
 
-	draw_cube(game, game->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V3(1, 1, 1), 0, 0);
+
+    draw_mesh(game, &game->gun_mesh, gun_p,
+
+			V3(.5, .5, .5), game->camera_rotation * V3(-1, 1, 1) + V3(0, PI, 0));
+
+	//draw_cube(game, game->light_p, V3(1, 0, 0), V3(0, 1, 0),  V3(.1, .1, .1), V3(1, 1, 1), 0, 0);
 
     game->animation_time += DT;
 
