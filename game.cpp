@@ -163,11 +163,11 @@ extern "C" int game_thread_work(void *data)
 
 		if (tile >= TILES_COUNT)
 		{
-			__sync_lock_test_and_set(&game->thread_finished[index], 1);
 			usleep(100);
 			continue;
 		}
 		render_tile(game->render_context, tile);
+        __sync_fetch_and_add(&game->tiles_finished, 1);
 	}
 #endif
 

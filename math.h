@@ -378,11 +378,19 @@ internal lane_u32 LaneU32(int x)
     return res;
 }
 
+internal lane_u32 LaneU32(lane_f32 x)
+{
+    lane_u32 res;
+
+    res.v = _mm256_cvtps_epi32(x.v);
+    return res;
+}
+
 internal lane_u32 LaneU32(int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7)
 {
     lane_u32 res;
 
- //   res.v = _mm256_set_epi32(x0, x1, x2, x3, x4, x5, x6, x7);
+    // TODO: make sure the order is correct
     res.v = _mm256_set_epi32(x7, x6, x5, x4, x3, x2, x1, x0);
     return res;
 }
@@ -403,19 +411,24 @@ internal lane_u32 operator>>(lane_u32 a, int shift)
     return res;
 }
 
-internal lane_u32 operator&(lane_u32 a, int value)
-{
-    lane_u32 res;
-
-    res.v = _mm256_and_si256(a.v, LaneU32(value).v);
-    return res;
-}
-
 internal lane_u32 operator&(lane_u32 a, lane_u32 b)
 {
     lane_u32 res;
 
     res.v = _mm256_and_si256(a.v, b.v);
+    return res;
+}
+
+internal lane_u32 operator&(lane_u32 a, int value)
+{
+    return a & LaneU32(value);
+}
+
+internal lane_u32 operator|(lane_u32 a, lane_u32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_or_si256(a.v, b.v);
     return res;
 }
 
@@ -426,6 +439,8 @@ internal lane_u32 operator<<(lane_u32 a, int shift)
     res.v = _mm256_slli_epi32(a.v, shift);
     return res;
 }
+
+
 
 
 
@@ -448,7 +463,7 @@ internal lane_f32 LaneF32(lane_u32 x)
 {
     lane_f32 res;
 
-    res.v = _mm256_castsi256_ps(x.v);
+    res.v = _mm256_cvtepi32_ps(x.v);
     return res;
 }
 
@@ -501,6 +516,50 @@ internal lane_f32 operator/(lane_f32 a, lane_f32 b)
     res.v = _mm256_div_ps(a.v, b.v);
     return res;
 }
+
+internal lane_f32 operator/(lane_f32 a, float b)
+{
+    lane_f32 res;
+
+    res = a * LaneF32(b);
+    return res;
+}
+
+internal lane_f32 operator-(lane_f32 a)
+{
+    return a * (-1);
+}
+
+internal lane_f32 &operator+=(lane_f32 &a, lane_f32 b)
+{
+    return a = a + b;
+}
+
+internal lane_f32 &operator-=(lane_f32 &a, lane_f32 b)
+{
+    return a = a - b;
+}
+
+internal lane_f32 &operator*=(lane_f32 &a, lane_f32 b)
+{
+    return a = a * b;
+}
+
+internal lane_f32 &operator*=(lane_f32 &a, float b)
+{
+    return a = a * b;
+}
+
+internal lane_f32 &operator/=(lane_f32 &a, lane_f32 b)
+{
+    return a = a / b;
+}
+
+internal lane_f32 &operator/=(lane_f32 &a, float b)
+{
+    return a = a / b;
+}
+
 
 
 internal lane_u32 operator<(lane_f32 a, lane_f32 b)
@@ -584,9 +643,9 @@ internal lane_v2 operator*(lane_v2 a, lane_v2 b)
 
 struct lane_v3
 {
-    __m256 x;
-    __m256 y;
-    __m256 z;
+    lane_f32 x;
+    lane_f32 y;
+    lane_f32 z;
 };
 
 #define LANE_WIDTH 8
@@ -597,10 +656,9 @@ internal lane_v3 operator+(lane_v3 a, lane_v3 b)
 {
     lane_v3 res;
 
-    res.x = _mm256_add_ps(a.x, b.x);
-    res.y = _mm256_add_ps(a.y, b.y);
-    res.z = _mm256_add_ps(a.z, b.z);
-
+    res.x = a.x + b.x;
+    res.y = a.y + b.y;
+    res.z = a.z + b.z;
     return res;
 }
 
@@ -608,10 +666,9 @@ internal lane_v3 operator-(lane_v3 a, lane_v3 b)
 {
     lane_v3 res;
 
-    res.x = _mm256_sub_ps(a.x, b.x);
-    res.y = _mm256_sub_ps(a.y, b.y);
-    res.z = _mm256_sub_ps(a.z, b.z);
-
+    res.x = a.x - b.x;
+    res.y = a.y - b.y;
+    res.z = a.z - b.z;
     return res;
 }
     
@@ -619,10 +676,9 @@ internal lane_v3 operator*(lane_v3 a, lane_v3 b)
 {
     lane_v3 res;
 
-    res.x = _mm256_mul_ps(a.x, b.x);
-    res.y = _mm256_mul_ps(a.y, b.y);
-    res.z = _mm256_mul_ps(a.z, b.z);
-
+    res.x = a.x * b.x;
+    res.y = a.y * b.y;
+    res.z = a.z * b.z;
     return res;
 }
 
@@ -630,12 +686,9 @@ internal lane_v3 operator*(lane_v3 a, float b)
 {
     lane_v3 res;
 
-    __m256 v = _mm256_set1_ps(b);
-
-    res.x = _mm256_mul_ps(a.x, v);
-    res.y = _mm256_mul_ps(a.y, v);
-    res.z = _mm256_mul_ps(a.z, v);
-
+    res.x = a.x * b;
+    res.y = a.y * b;
+    res.z = a.z * b;
     return res;
 }
 
@@ -648,10 +701,9 @@ internal lane_v3 operator/(lane_v3 a, lane_v3 b)
 {
     lane_v3 res;
 
-    res.x = _mm256_div_ps(a.x, b.x);
-    res.y = _mm256_div_ps(a.y, b.y);
-    res.z = _mm256_div_ps(a.z, b.z);
-
+    res.x = a.x / b.x;
+    res.y = a.y / b.y;
+    res.z = a.z / b.z;
     return res;
 }
 
@@ -659,19 +711,107 @@ internal lane_v3 operator/(lane_v3 a, float b)
 {
     lane_v3 res;
 
-    __m256 v = _mm256_set1_ps(b);
+    res.x = a.x / b;
+    res.y = a.y / b;
+    res.z = a.z / b;
+    return res;
+}
 
-    res.x = _mm256_div_ps(a.x, v);
-    res.y = _mm256_div_ps(a.y, v);
-    res.z = _mm256_div_ps(a.z, v);
+
+internal lane_v3 operator*(v3 v, lane_f32 l)
+{
+    lane_v3 res;
+
+    res.x = l * v.x;
+    res.y = l * v.y;
+    res.z = l * v.z;
 
     return res;
 }
 
-//__m256 lane_v3 dot(lane_v3 a, lane_v3 b)
-//{
-//
-//}
+internal lane_v3 operator*(lane_f32 l, v3 v)
+{
+    return v * l;
+}
+
+internal lane_v3 operator*(lane_v3 a, v3 b)
+{
+    lane_v3 res;
+
+    res.x = a.x * b.x;
+    res.y = a.y * b.y;
+    res.z = a.z * b.z;
+
+    return res;
+}
+
+
+internal lane_v3 LaneV3(v3 v)
+{
+    lane_v3 res;
+
+
+    res.x = LaneF32(v.x);
+    res.y = LaneF32(v.y);
+    res.z = LaneF32(v.z);
+    return res;
+}
+
+internal lane_v3 LaneV3(lane_f32 a)
+{
+    lane_v3 res;
+
+    res.x = res.y = res.z = a;
+    return res;
+}
+
+internal lane_f32 sqrt(lane_f32 x)
+{
+    lane_f32 res;
+
+    res.v = _mm256_sqrt_ps(x.v);
+    return res;
+}
+
+internal lane_f32 rsqrt(lane_f32 x)
+{
+    lane_f32 res;
+
+    res.v = _mm256_rsqrt_ps(x.v);
+    return res;
+}
+
+internal lane_v3 noz(lane_v3 v)
+{
+    lane_f32 length = rsqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+
+    v.x *= length;
+    v.y *= length;
+    v.z *= length;
+
+    return v;
+}
+
+internal lane_f32 dot(lane_v3 a, lane_v3 b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+internal lane_f32 max(lane_f32 a, lane_f32 b)
+{
+    lane_f32 res;
+
+    res.v = _mm256_max_ps(a.v, b.v);
+    return res;
+}
+
+internal lane_f32 min(lane_f32 a, lane_f32 b)
+{
+    lane_f32 res;
+
+    res.v = _mm256_min_ps(a.v, b.v);
+    return res;
+}
 
 
 #endif

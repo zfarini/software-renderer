@@ -7,7 +7,7 @@
 #include <time.h>
 #include <sys/stat.h> 
 
-#define CODE_RELOADING 1
+#define CODE_RELOADING 0
 
 #if (!CODE_RELOADING)
 #include "game.cpp"

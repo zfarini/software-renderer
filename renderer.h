@@ -7,7 +7,11 @@
 #define TILES_PER_WIDTH 16
 #define TILES_PER_HEIGHT 16
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
-#define SAMPLES_PER_PIXEL (16)
+
+#define SAMPLES_PER_PIXEL_DIM (1)
+
+
+#define SAMPLES_PER_PIXEL (SAMPLES_PER_PIXEL_DIM * SAMPLES_PER_PIXEL_DIM)
 #define BILINEAR_FILTERING 0
 
 struct Plane
@@ -41,7 +45,7 @@ struct Render_Context
 	int *triangles_per_tile[TILES_COUNT];
 	int triangles_per_tile_count[TILES_COUNT];
 
-	v2 samples_offset[SAMPLES_PER_PIXEL];
+	lane_v2 samples_offset[SAMPLES_PER_PIXEL];
 
 
 	v3 light_p;

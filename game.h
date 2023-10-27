@@ -23,7 +23,7 @@
 
 #include "math.h"
 
-#define THREADS 1
+#define THREADS 0
 #define CORE_COUNT (4)
 #define CUBES_WIDTH 1
 #define CUBES_HEIGHT 1
@@ -130,7 +130,7 @@ typedef struct
 
 	volatile int next_thread_index;
 	volatile int next_tile_index;
-	volatile int thread_finished[CORE_COUNT];
+    volatile int tiles_finished;
 } Game;
 
 
