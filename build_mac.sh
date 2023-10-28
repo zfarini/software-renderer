@@ -1,4 +1,6 @@
-FLAGS="-std=c++11  -O3 -mavx2 libSDL2-2.0.0.dylib"
+FLAGS="-std=c++11 -O3 -mavx2 libSDL2-2.0.0.dylib"
+
+#FLAGS="$FLAGS -fsanitize=address -fsanitize=undefined -g3"
 
 compiler="clang++"
 #compiler="/Users/zfarini/goinfre/homebrew/Cellar/gcc/13.2.0/bin/g++-13  "

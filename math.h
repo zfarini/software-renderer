@@ -16,11 +16,20 @@ typedef union
     struct {float u, v, w;};
 	float e[3];
 
-
 	struct {
 		v2 xy;
 	};
 } v3;
+
+typedef union
+{
+	struct {float x, y, z, w;};
+	struct {float r, g, b, a;};
+
+	struct { v3 rgb;};
+
+	float e[4];
+} v4;
 
 typedef struct 
 {
@@ -58,6 +67,8 @@ internal float clamp(float a, float b, float t)
 	else if (t > b) t = b;
 	return t;
 }
+
+/**********V3**********/
 
 internal v3 V3(float x, float y, float z)
 {
@@ -804,6 +815,22 @@ internal lane_v3 operator*(lane_v3 a, v3 b)
 }
 
 
+internal lane_v3 operator*(lane_v3 a, lane_f32 b)
+{
+	lane_v3 res;
+
+
+	res.x = a.x * b;
+	res.y = a.y * b;
+	res.z = a.z * b;
+	return res;
+}
+
+internal lane_v3 operator*(lane_f32 b, lane_v3 a)
+{
+	return a * b;
+}
+
 internal lane_v3 LaneV3(v3 v)
 {
     lane_v3 res;
@@ -813,6 +840,16 @@ internal lane_v3 LaneV3(v3 v)
     res.y = LaneF32(v.y);
     res.z = LaneF32(v.z);
     return res;
+}
+
+internal lane_v3 LaneV3(lane_f32 x, lane_f32 y, lane_f32 z)
+{
+	return lane_v3{x, y, z};
+}
+
+internal lane_v3 LaneV3(lane_u32 x, lane_u32 y, lane_u32 z)
+{
+	return lane_v3{LaneF32(x), LaneF32(y), LaneF32(z)};
 }
 
 internal lane_v3 LaneV3(lane_f32 a)
@@ -871,5 +908,15 @@ internal lane_f32 min(lane_f32 a, lane_f32 b)
     return res;
 }
 
+
+v4 V4(float x, float y, float z, float w)
+{
+	return v4{x, y, z, w};
+}
+
+v4 V4(v3 xyz, float w)
+{
+	return v4{xyz.x, xyz.y, xyz.z, w};
+}
 
 #endif

@@ -14,6 +14,7 @@
 #include <stdatomic.h>
 #include <assert.h>
 #include <stdalign.h>
+#include <inttypes.h>
 
 #define internal static
 #define DT (1.f / 60)
@@ -59,7 +60,8 @@ typedef struct
 	v2 uv0, uv1, uv2;
     v3 n0, n1, n2;
 	Texture *texture;
-	v3 color;
+	v4 color;
+	int no_lighthing;
     // computed
 	v3 screen_p0, screen_p1, screen_p2;
 	int min_x, min_y, max_x, max_y;

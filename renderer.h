@@ -54,6 +54,17 @@ struct Render_Context
 	Plane clip_planes[5];
 
 	Game *game;
+	
+	uint64_t counter;
+	uint64_t avg_counter;
+	int triangles_pushed;
+	int triangles_rendered;
+
+	Texture text_texture;
+	float text_du;
+	int first_char;
+	int last_char;
+	
 };
 
 //void begin_render(Render_Context *r);

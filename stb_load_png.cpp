@@ -31,6 +31,7 @@ Texture load_texture(const char *filename)
             uint32_t b = (p >> 16) & 0xFF;
             uint32_t a = (p >> 24) & 0xFF;
 
+			a = 255;
 			uint32_t *dest = tex.pixels + (h - y - 1) * tex.width + x;
 			*dest = (r << 24) | (g << 16) | (b << 8) | a;
 

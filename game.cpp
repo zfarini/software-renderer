@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include "utils.cpp"
 #include "renderer.cpp"
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "stb_truetype.h"
 
 void read_vertex(char **line, int *f)
 {
@@ -213,6 +215,7 @@ extern "C" void game_update_and_render(Game *game)
 			t->width = t->height = t->pitch = 2;
 			t->pixels = (uint32_t *)calloc(4, sizeof(uint32_t));
 			t->pixels[0] = t->pixels[3] = 0xffffffff;
+			t->pixels[1] = t->pixels[2] = 0xff;
 		}
 
         game->starwars_mesh = load_mesh("starwars.obj",  &game->starwars_tex);
@@ -243,7 +246,94 @@ extern "C" void game_update_and_render(Game *game)
 
 
 		game->render_context = (Render_Context *)malloc(sizeof(*game->render_context));
-		*game->render_context = new_render_context(game, game->framebuffer, 0.05f, 1000, 60, 100000);
+		*game->render_context = new_render_context(game, game->framebuffer, 0.05f, 1000, 60, 1000000);
+
+		{
+			stbtt_fontinfo info;
+    	    long size;
+    	    unsigned char *font_contents = (unsigned char *)read_entire_file("liberation-mono.ttf");
+
+    	    if (!stbtt_InitFont(&info, font_contents, 0))
+    	        assert(0);
+    	    int font_line_height = 1024;
+
+    	    float scale = stbtt_ScaleForPixelHeight(&info, font_line_height);
+
+
+    	    int ascent, descent, lineGap;
+    	    stbtt_GetFontVMetrics(&info, &ascent, &descent, &lineGap);
+    	    ascent = roundf(ascent * scale);
+    	    descent = roundf(descent * scale);
+
+			int chars_first = ' ';
+			int chars_last = 127;
+			int chars_count = chars_last - chars_first;
+
+			Texture text_texture;
+
+    	  	int ax;
+    	    int lsb;
+
+
+    	    stbtt_GetCodepointHMetrics(&info, 'A', &ax, &lsb);
+			int font_advance_x = ceilf(ax * scale);
+
+			text_texture.width = text_texture.pitch = font_advance_x * (chars_last - chars_first);
+			text_texture.height = font_line_height;
+			text_texture.pixels = (uint32_t *)malloc(text_texture.width * text_texture.height * sizeof(uint32_t));
+			game->render_context->text_texture = text_texture;
+			game->render_context->first_char = chars_first;
+			game->render_context->last_char = chars_last;
+			game->render_context->text_du = (float)font_advance_x / text_texture.width;			
+
+
+
+			uint8_t *bitmap = (uint8_t *)malloc(font_line_height * font_advance_x);
+
+    	    for (int c = chars_first; c < chars_last; c++)
+    	    {
+    	        /* how wide is this character */
+
+    	        stbtt_GetCodepointHMetrics(&info, c, &ax, &lsb);
+    	        /* (Note that each Codepoint call has an alternative Glyph version which caches the work required to lookup the character word[i].) */
+
+    	        /* get bounding box for character (may be offset to account for chars that dip above or below the line) */
+    	        int c_x1, c_y1, c_x2, c_y2;
+    	        stbtt_GetCodepointBitmapBox(&info, c, scale, scale, &c_x1, &c_y1, &c_x2, &c_y2);
+
+    	        /* compute y (different characters have different heights) */
+    	        int y = ascent + c_y1;
+    	        /* render character (stride and offset is important here) */
+    	        int h = c_y2 - c_y1;
+    	        int w = c_x2 - c_x1;
+
+    	        //TOOD: changed this ceil for smaller fonts, we gonna need to do better
+    	        assert((int)ceilf(ax * scale) == font_advance_x);
+    	        //printf("%d %f\n", font_advance_x, ax * scale);
+    	        //printf("%d %d %d %d\n", w, h, y, font_advance_x);
+    	        int byteOffset = roundf(lsb * scale) + (y * font_advance_x);
+				memset(bitmap, 0, font_line_height * font_advance_x);
+    	        stbtt_MakeCodepointBitmap(&info, bitmap + byteOffset, w, h, font_advance_x, scale, scale, c);
+
+	//			printf("%d %d %d %d\n", font_line_height, font_advance_x, w, h);
+				
+				for (int y = 0; y < font_line_height; y++)
+				{
+					for (int x = 0; x < font_advance_x; x++)
+					{
+						uint32_t b = bitmap[(font_line_height - y - 1) * font_advance_x + x];
+						uint32_t color = 0xffffff00 | b;
+						*(text_texture.pixels + y * text_texture.width + (c - chars_first) * font_advance_x + x) = color;
+					}
+				}
+    	    }
+    	    free(font_contents);
+			free(bitmap);
+		}
+
+
+
+
 		game->is_initialized = 1;
     }
 	struct timespec time_start, time_end;
@@ -267,25 +357,51 @@ extern "C" void game_update_and_render(Game *game)
 
 	Render_Context *r = game->render_context;
 
-	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.52, .8, .9), light_p);
+	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.2, 0.2, 0.2), light_p);
 
 
 #if 0
-	v3 rotation = {};
-	for (int z = 0; z < CUBES_HEIGHT; z++)
 	{
-		for (int x = 0; x < CUBES_WIDTH; x++)
-		{
-			int y_count = game->cubes_height[z][x] * 5 + 1;
+		int w = 20;
+		int h = 20;
+		int d = 10;
 
-			y_count = 1;
-			for (int y = 0; y < y_count; y++)
+		float space = (sinf(game->time) + 1) * 0.5f * 1;
+
+		float a = game->time;
+		float b = sinf(game->time * 2);
+		float c = cosf(game->time * 1.5);
+
+		for (int x = 0; x < w; x++)
+		{
+			for (int z = 0; z < h; z++)
 			{
-				float radius = 0.2;
-				v3 p = V3((x * radius * 1.98 - CUBES_WIDTH * 0.5f * radius * 2.001), y * radius * 1.98f, -z * radius * 1.98) + cubes_offset;
-				v3 color = lerp(V3(0.2, 0.8, 0.3), game->cubes_height[z][x], V3(0.1, 0.9, 0.7));
-				push_cube(r, p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V3(1, 1, 1), &game->grass_top_tex, &game->grass_tex);
-    //			push_cube(game, p, rotation, 0.2, V3(1, 1, 1), &game->grass_top_tex, &game->grass_tex);
+				for (int y = 0; y < d; y++)
+				{
+					if (x && y && z && (x != w - 1) && (z != h - 1) && (y != d - 1))
+						continue ;
+					if (y == d - 1)
+						continue ;
+					if (z == 0 && x >= 3 && x <= 6 && y <= 4)
+						continue ;
+					
+					space = 0.1f;
+					v3 p = V3(0, 2, -1) + V3(x, y , -z) + V3(space, space, -space) * V3(x, y, z);
+					v3 radius = V3(0.5, 0.5, 0.5);
+					v4 color = V4(1, 1, 1, 0.2);
+
+					m3x3 rotation = z_rotation(a) * x_rotation(b) * y_rotation(c);
+
+					v3 u = V3(1, 0, 0);
+					v3 v = V3(0, 1, 0);
+					v3 w = V3(0, 0, -1);
+					
+					//u = rotation * u;
+					//v = rotation * v;
+					//w = rotation * w;
+
+					push_cube(r, p, u, v, w, radius, color, 0, 0);
+				}
 			}
 		}
 	}
@@ -301,7 +417,7 @@ extern "C" void game_update_and_render(Game *game)
 		t.uv0 = V2(0, 0);
 		t.uv1 = V2(d, 0);
 		t.uv2 = V2(d, d);
-		t.color = V3(.6, .6, .6);
+		t.color = V4(.6, .6, .6, 1);
 		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
 		t.texture = &game->checkerboard_tex
 			;
@@ -316,18 +432,88 @@ extern "C" void game_update_and_render(Game *game)
 		t.uv0 = V2(0, 0);
 		t.uv1 = V2(d, d);
 		t.uv2 = V2(0, d);
-		t.color = V3(.6 , .6 ,.6);
+		t.color = V4(.6 , .6 ,.6, 1);
 		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
 		t.texture = &game->checkerboard_tex;
 		push_triangle(r, &t);
 	}
 
-	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V3(0.5, 0.8, 0.2));
-    push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
-    push_mesh(r, &game->starwars_mesh, V3(0, -0.5, -5), V3(1, 1, 1), V3(0, 0, 0));
-    push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5), V3(1, 1, 1), V3(0, 0, 0));
-	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V3(1, 1, 1), 0, 0);
 
+
+	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.5, 0.8, 0.2, 1));
+    push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
+    push_mesh(r, &game->starwars_mesh, V3(0, -0.5, -5));
+    push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5));
+	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
+
+
+	char *s = read_entire_file(__FILE__);
+
+	d = 0.2f;
+	float yoffset = 0;
+	float xoffset = 0;
+
+	for (int i = 0; s[i]; i++)
+	{
+		if (s[i] == '\n')
+		{
+			yoffset += d;
+			xoffset = 0;
+			continue;
+		}
+		if (s[i] < game->render_context->first_char ||
+			s[i] >= game->render_context->last_char)
+		{
+			xoffset += d;
+			continue ;
+		}
+
+
+		float ux_min = (s[i] - game->render_context->first_char) * game->render_context->text_du;
+		float ux_max = ux_min + game->render_context->text_du;
+
+		v3  offset = V3(xoffset, 524 * d - yoffset, -2);
+
+
+		{
+
+			Triangle t = {};
+
+			t.p0 = V3(0, 0, 0);
+			t.p1 = V3(d, 0, 0);
+			t.p2 = V3(d, d, 0);
+
+			t.p0 += offset, t.p1 += offset, t.p2 += offset;
+
+			t.uv0 = V2(ux_min, 0);
+			t.uv1 = V2(ux_max, 0);
+			t.uv2 = V2(ux_max, 1);
+			t.color = V4(1, 1, 1, 1);
+			t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
+			t.texture = &game->render_context->text_texture;
+			t.no_lighthing = 1;
+			push_triangle(r, &t);
+		}
+		{
+			Triangle t = {};
+
+			t.p0 = V3(0, 0, 0);
+			t.p1 = V3(d, d, 0);
+			t.p2 = V3(0, d,  0);
+
+			t.p0 += offset, t.p1 += offset, t.p2 += offset;
+			t.uv0 = V2(ux_min, 0);
+			t.uv1 = V2(ux_max, 1);
+			t.uv2 = V2(ux_min, 1);
+			t.color = V4(1, 1, 1, 1);
+			t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
+			t.texture = &game->render_context->text_texture;
+			t.no_lighthing = 1;
+			push_triangle(r, &t);
+		}
+		xoffset += d;
+	}
+	free(s);
 	end_render(r);
 
 	clock_gettime(CLOCK_MONOTONIC, &time_end);
