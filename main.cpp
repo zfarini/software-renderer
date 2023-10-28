@@ -79,7 +79,7 @@ int main(void)
 		return 1;
 	}
 
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);//|SDL_RENDERER_PRESENTVSYNC);
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
 	if (!renderer)
 	{
 		fprintf(stderr, "SDL FAILURE: %s\n", SDL_GetError());

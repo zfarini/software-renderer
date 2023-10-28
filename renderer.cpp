@@ -708,13 +708,14 @@ void render_tile(Render_Context *r, int tile_index)
 
     	for (int y = min_y; y < max_y; y++)
     	{
+#if 1
             int count = (max_x - min_x) * SAMPLES_PER_PIXEL;
             for (int ix = 0; ix < count; ix += LANE_WIDTH)
     	    {
                 lane_u32 lane_ix = LaneU32(0, 1, 2, 3, 4, 5, 6, 7) + LaneU32(ix);
 
                 lane_u32 x = LaneU32(min_x) + 
-                        (lane_ix >> SAMPLES_PER_PIXEL_DIM);
+                        (lane_ix >> 2); // TODO: !!!
 
                 lane_v2 pixel_offset = r->samples_offset[ix % SAMPLES_PER_PIXEL];
 
@@ -729,10 +730,9 @@ void render_tile(Render_Context *r, int tile_index)
 
                 lane_u32 mask = (w1 >= LaneF32(0)) & (w2 >= LaneF32(0)) & (w0 >= LaneF32(0));
 
+#if 1
                 if (ix + LANE_WIDTH > count)
-                {
-                 //   mask.v = _mm256_blend_epi32(mask.v, LaneF32(0).v, 0xFF & (~((1 << (count - ix)) - 1)));
-                
+                { // TODO: find a better way to do this
                     alignas(32) uint32_t value[LANE_WIDTH] = {};
 
                     int left = ix + LANE_WIDTH - count;
@@ -740,32 +740,10 @@ void render_tile(Render_Context *r, int tile_index)
                     for (int j = 0; j < left; j++)
                         value[LANE_WIDTH - j - 1] = 0xFFFFFFFF;
 
-                    uint32_t v[LANE_WIDTH] = {};
-
-
-#define print_u32(x) \
-                    _mm256_store_si256((__m256i *)v, x); \
-                    printf("%s = ", #x); \
-                    for (int i = 0; i < LANE_WIDTH; i++) \
-                        printf("%x ", v[i]); \
-                    printf("\n")
-
                     __m256i blend =  _mm256_load_si256((__m256i *)value);
-                    
-                    for (int i = 0; i < 8; i++)
-                        value[i] = 0;
-                    value[0] = 0x1234;
-                    value[1] = 0x151991;
-                    mask.v =  _mm256_load_si256((__m256i *)value);
-
-                    print_u32(blend);
-                    print_u32(mask.v);
                     mask.v = _mm256_blendv_epi8(mask.v, LaneU32(0).v, blend);
-                    print_u32(mask.v);
-                    printf("ix : %d, count: %d\n", ix, count);
-                    exit(0);
                 }
-
+#endif
 
                 if (_mm256_testz_si256(mask.v, mask.v))
                     continue ;
@@ -832,11 +810,11 @@ void render_tile(Render_Context *r, int tile_index)
                 
 				lane_f32 diffuse = max(dot(noz(LaneV3(light_p) - p), n), LaneF32(0));
 
-
                 lane_v3 c = LaneV3(diffuse) * t->color;
 
 
                 c = c * 255;
+
 
                 lane_u32 color32 = (LaneU32(c.x) << 24) | (LaneU32(c.y) << 16) | (LaneU32(c.z) << 8);
 
@@ -857,6 +835,53 @@ void render_tile(Render_Context *r, int tile_index)
                 _mm256_maskstore_ps((r->zbuffer + buffer_index), mask.v, z.v);
     	    }
 		}
+#else
+            for (int ix = 0; ix < (max_x - min_x) * SAMPLES_PER_PIXEL; ix += 1)
+    	    {
+
+                int x = min_x + ix / SAMPLES_PER_PIXEL;
+                int sample = ix % SAMPLES_PER_PIXEL;
+				int buffer_index = y * r->buffer_aa.width + x * SAMPLES_PER_PIXEL + sample;
+
+	//			for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
+				{
+					v2 poffset = V2(0.5, 0.5);//r->samples_offset[sample];
+
+					v3 pixel_p = V3(x + poffset.x, y + poffset.y, 0);
+					float w0, w1, w2;
+					{
+                       v3 p = pixel_p - p0;
+					   float alpha = p.x * v.y * det + p.y * (-v.x) * det;
+	 				   float beta = p.x * (-u.y) * det + p.y * u.x * det;
+					   if (alpha < 0 || beta < 0 || alpha + beta > 1)
+						   continue ;
+					   w0 = 1 - alpha - beta;
+					   w1 = alpha;
+					   w2 = beta;
+					}
+
+					float one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
+					float z = 1.f / one_over_z;
+					
+					w0 *= z * p0.z;
+					w1 *= z * p1.z;
+					w2 *= z * p2.z;
+
+
+					v3 p = tp0 * w0 + tp1 * w1 + tp2 * w2;
+
+
+					if (z >= r->zbuffer[buffer_index])
+						continue ;
+
+					r->zbuffer[buffer_index] = z;
+
+
+	    	   		r->buffer_aa.pixels[buffer_index] = color_v3_to_u32(t->color);
+				}
+			}
+		}
+#endif
 
 	}
 
