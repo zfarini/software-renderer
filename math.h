@@ -378,11 +378,19 @@ internal lane_u32 LaneU32(int x)
     return res;
 }
 
+internal lane_u32 LaneU32(__m256i v)
+{
+    lane_u32 res;
+
+	res.v = v;
+    return res;
+}
+
 internal lane_u32 LaneU32(lane_f32 x)
 {
     lane_u32 res;
 
-    res.v = _mm256_cvtps_epi32(x.v);
+    res.v = _mm256_cvttps_epi32(x.v);
     return res;
 }
 
@@ -392,6 +400,7 @@ internal lane_u32 LaneU32(int x0, int x1, int x2, int x3, int x4, int x5, int x6
 
     // TODO: make sure the order is correct
     res.v = _mm256_set_epi32(x7, x6, x5, x4, x3, x2, x1, x0);
+   // res.v = _mm256_set_epi32(x0, x1, x2, x3, x4, x5, x6, x7);
     return res;
 }
 
@@ -401,6 +410,25 @@ internal lane_u32 operator+(lane_u32 a, lane_u32 b)
 
     res.v = _mm256_add_epi32(a.v, b.v);
     return res;
+}
+
+internal lane_u32 operator*(lane_u32 a, lane_u32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_mullo_epi32(a.v, b.v);
+    return res;
+}
+
+internal lane_u32 operator*(lane_u32 a, int x)
+{
+    return a * LaneU32(x);
+}
+
+
+internal lane_u32 operator*(int x, lane_u32 a)
+{
+	return a * x;
 }
 
 internal lane_u32 operator>>(lane_u32 a, int shift)
@@ -440,6 +468,21 @@ internal lane_u32 operator<<(lane_u32 a, int shift)
     return res;
 }
 
+internal lane_u32 min(lane_u32 a, lane_u32 b)
+{
+	lane_u32 res;
+
+	res.v = _mm256_min_epi32(a.v, b.v);
+	return res;
+}
+
+internal lane_u32 max(lane_u32 a, lane_u32 b)
+{
+	lane_u32 res;
+
+	res.v = _mm256_max_epi32(a.v, b.v);
+	return res;
+}
 
 
 
@@ -521,7 +564,7 @@ internal lane_f32 operator/(lane_f32 a, float b)
 {
     lane_f32 res;
 
-    res = a * LaneF32(b);
+    res = a / LaneF32(b);
     return res;
 }
 
@@ -566,7 +609,7 @@ internal lane_u32 operator<(lane_f32 a, lane_f32 b)
 {
     lane_u32 res;
 
-    res.v = _mm256_cmp_ps(a.v, b.v, _CMP_LT_OS);
+    res.v = _mm256_castps_si256(_mm256_cmp_ps(a.v, b.v, _CMP_LT_OS));
 
     return res;
 }
@@ -576,7 +619,7 @@ internal lane_u32 operator>(lane_f32 a, lane_f32 b)
 {
     lane_u32 res;
 
-    res.v = _mm256_cmp_ps(a.v, b.v, _CMP_GT_OS);
+    res.v = _mm256_castps_si256(_mm256_cmp_ps(a.v, b.v, _CMP_GT_OS));
 
     return res;
 }
@@ -585,7 +628,7 @@ internal lane_u32 operator>=(lane_f32 a, lane_f32 b)
 {
     lane_u32 res;
 
-    res.v = _mm256_cmp_ps(a.v, b.v, _CMP_GE_OS);
+    res.v = _mm256_castps_si256(_mm256_cmp_ps(a.v, b.v, _CMP_GE_OS));
 
     return res;
 }
@@ -594,7 +637,7 @@ internal lane_u32 operator<=(lane_f32 a, lane_f32 b)
 {
     lane_u32 res;
 
-    res.v = _mm256_cmp_ps(a.v, b.v, _CMP_LE_OS);
+    res.v = _mm256_castps_si256(_mm256_cmp_ps(a.v, b.v, _CMP_LE_OS));
 
     return res;
 }
@@ -638,6 +681,21 @@ internal lane_v2 operator*(lane_v2 a, lane_v2 b)
     res.y = a.y * b.y;
 
     return res;
+}
+
+internal lane_v2 operator*(lane_f32 a, v2 b)
+{
+	lane_v2 res;
+
+	res.x = a * b.x;
+	res.y = a * b.y;
+
+	return res;
+}
+
+internal lane_v2 operator*(v2 b, lane_f32 a)
+{
+	return a * b;
 }
 
 

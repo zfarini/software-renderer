@@ -163,7 +163,7 @@ extern "C" int game_thread_work(void *data)
 
 		if (tile >= TILES_COUNT)
 		{
-			usleep(100);
+			usleep(100); // TODO: better sleep
 			continue;
 		}
 		render_tile(game->render_context, tile);
@@ -195,8 +195,7 @@ void load_animation(const char *dir, Mesh *out, int frame_count, Texture *textur
 
 extern "C" void game_update_and_render(Game *game)
 {
-	struct timespec time_start, time_end;
-	clock_gettime(CLOCK_MONOTONIC, &time_start);
+
 
 	v3 cubes_offset = {-2, -1, -3};
 
@@ -247,6 +246,8 @@ extern "C" void game_update_and_render(Game *game)
 		*game->render_context = new_render_context(game, game->framebuffer, 0.05f, 1000, 60, 100000);
 		game->is_initialized = 1;
     }
+	struct timespec time_start, time_end;
+	clock_gettime(CLOCK_MONOTONIC, &time_start);
 
 	// update camera
 	{
@@ -262,14 +263,14 @@ extern "C" void game_update_and_render(Game *game)
 
 	float x = 3 * cos(game->time * 1.5);
 	float z = -4 + 3 * sin(game->time * 1.5);
-	v3 light_p = V3(x, 3, z);
+	v3 light_p = V3(3, 3, -1);//V3(x, 3, z);
 
 	Render_Context *r = game->render_context;
 
 	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.52, .8, .9), light_p);
 
 
-#if 1
+#if 0
 	v3 rotation = {};
 	for (int z = 0; z < CUBES_HEIGHT; z++)
 	{

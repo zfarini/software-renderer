@@ -56,8 +56,8 @@ struct Texture
 typedef struct 
 {
 	v3 p0, p1, p2;
-    v3 n0, n1, n2;
 	v2 uv0, uv1, uv2;
+    v3 n0, n1, n2;
 	Texture *texture;
 	v3 color;
     // computed

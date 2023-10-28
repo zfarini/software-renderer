@@ -107,7 +107,7 @@ void begin_render(Render_Context *r, v3 camera_p, m3x3 camera_rotation, v3 backg
 
 	for (int i = 0; i < r->buffer_aa.width * r->buffer_aa.height; i += 8)
 	{
-		_mm256_store_si256((__m256i *)(r->zbuffer + i), z);
+		_mm256_store_ps((r->zbuffer + i), z);
 		_mm256_store_si256((__m256i *)(r->buffer_aa.pixels + i), bg);
 	}
 
@@ -174,8 +174,6 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 	triangles[0].p1 = world_to_camera(r, triangle->p1);
 	triangles[0].p2 = world_to_camera(r, triangle->p2);
 
-
-		
 	for (int i = 0; i < ARRAY_LENGTH(r->clip_planes) && triangle_count; i++)
 	{
 		int new_triangle_count = 0;
@@ -615,6 +613,7 @@ void push_sphere(Render_Context *r, v3 center, float radius, v3 color)
 
 void push_mesh(Render_Context *r, Mesh *mesh, v3 position, v3 scale, v3 rotation, v3 color = V3(1, 1, 1))
 {
+	return ;
     m3x3 rot_matrix = z_rotation(rotation.z) * (y_rotation(rotation.y) * x_rotation(rotation.x));
     m3x3 inv_matrix = x_rotation(-rotation.x) * (y_rotation(-rotation.y) * z_rotation(-rotation.z));
     m3x3 normal_matrix = transpose(inv_matrix);
@@ -704,11 +703,8 @@ void render_tile(Render_Context *r, int tile_index)
 			continue;
 		det = 1 / det;
 
-
-
     	for (int y = min_y; y < max_y; y++)
     	{
-#if 1
             int count = (max_x - min_x) * SAMPLES_PER_PIXEL;
             for (int ix = 0; ix < count; ix += LANE_WIDTH)
     	    {
@@ -756,9 +752,6 @@ void render_tile(Render_Context *r, int tile_index)
 
                 __m256 zbuf = _mm256_maskload_ps(r->zbuffer + buffer_index, mask.v);
 
- //               __m256 zbuf = _mm256_loadu_ps(r->zbuffer + buffer_index);
-
-
                 mask = mask & (z < LaneF32(zbuf));
                 if (_mm256_testz_si256(mask.v, mask.v))
                     continue ;
@@ -769,38 +762,32 @@ void render_tile(Render_Context *r, int tile_index)
 
 				lane_v3 p = tp0 * w0 + tp1 * w1 + tp2 * w2;
 
-#if 0
-                {
-
-                    v2 uv = uv0 * w0 + uv1 * w1 + uv2 * w2;
-
-					v3 texture_color = V3(1, 1, 1);
-					if (t->texture)
-					{
-						uv.x = uv.x - floorf(uv.x);
-						uv.y = uv.y - floorf(uv.y);
-
-						
-						float tx = uv.x * t->texture->width;
-						float ty = uv.y * t->texture->height;
-
-						float fx =  tx - floorf(tx);
-						float fy = ty - floorf(ty);
-
-						int x = tx, y = ty;
-
-						if (x >= t->texture->width) x = t->texture->width - 1;
-						if (y >= t->texture->height) y = t->texture->height - 1;
-                        if (x < 0) x = 0;
-                        if (y < 0) y = 0;
+				lane_v3 texture_color = LaneV3(LaneF32(1));
 
 
-						uint32_t t00 = *(t->texture->pixels + (y) * t->texture->width + (x));
+				if (t->texture)
+				{
+                	lane_v2 uv = uv0 * w0 + uv1 * w1 + uv2 * w2;
 
-						texture_color = color_u32_to_v3(t00);
-					}
-                }
-#endif
+					uv.x -= LaneF32(_mm256_floor_ps(uv.x.v));
+					uv.y -= LaneF32(_mm256_floor_ps(uv.y.v));
+
+					lane_u32 tx = LaneU32(uv.x * t->texture->width);
+					lane_u32 ty = LaneU32(uv.y * t->texture->height);
+
+					tx = min(tx, LaneU32(t->texture->width - 1));
+					ty = min(ty, LaneU32(t->texture->height - 1));
+
+					lane_u32 idx = ty * t->texture->width + tx;
+
+					lane_u32 color32 = LaneU32(_mm256_mask_i32gather_epi32(LaneU32(0).v,
+							(int *)t->texture->pixels, idx.v, mask.v, 4));
+
+					texture_color.x = LaneF32((color32 >> 24) & 0xFF)/ 255.f;
+					texture_color.y = LaneF32((color32 >> 16) & 0xFF) / 255.f;
+					texture_color.z = LaneF32((color32 >> 8)  & 0xFF) / 255.f;
+				}
+
 				lane_v3 n = noz(w0 * n0 + w1 * n1 + w2 * n2);
 
                 
@@ -809,8 +796,8 @@ void render_tile(Render_Context *r, int tile_index)
 
                 
 				lane_f32 diffuse = max(dot(noz(LaneV3(light_p) - p), n), LaneF32(0));
-
-                lane_v3 c = LaneV3(diffuse) * t->color;
+				
+                lane_v3 c =  LaneV3(diffuse) * texture_color * t->color;
 
 
                 c = c * 255;
@@ -835,54 +822,6 @@ void render_tile(Render_Context *r, int tile_index)
                 _mm256_maskstore_ps((r->zbuffer + buffer_index), mask.v, z.v);
     	    }
 		}
-#else
-            for (int ix = 0; ix < (max_x - min_x) * SAMPLES_PER_PIXEL; ix += 1)
-    	    {
-
-                int x = min_x + ix / SAMPLES_PER_PIXEL;
-                int sample = ix % SAMPLES_PER_PIXEL;
-				int buffer_index = y * r->buffer_aa.width + x * SAMPLES_PER_PIXEL + sample;
-
-	//			for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
-				{
-					v2 poffset = V2(0.5, 0.5);//r->samples_offset[sample];
-
-					v3 pixel_p = V3(x + poffset.x, y + poffset.y, 0);
-					float w0, w1, w2;
-					{
-                       v3 p = pixel_p - p0;
-					   float alpha = p.x * v.y * det + p.y * (-v.x) * det;
-	 				   float beta = p.x * (-u.y) * det + p.y * u.x * det;
-					   if (alpha < 0 || beta < 0 || alpha + beta > 1)
-						   continue ;
-					   w0 = 1 - alpha - beta;
-					   w1 = alpha;
-					   w2 = beta;
-					}
-
-					float one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
-					float z = 1.f / one_over_z;
-					
-					w0 *= z * p0.z;
-					w1 *= z * p1.z;
-					w2 *= z * p2.z;
-
-
-					v3 p = tp0 * w0 + tp1 * w1 + tp2 * w2;
-
-
-					if (z >= r->zbuffer[buffer_index])
-						continue ;
-
-					r->zbuffer[buffer_index] = z;
-
-
-	    	   		r->buffer_aa.pixels[buffer_index] = color_v3_to_u32(t->color);
-				}
-			}
-		}
-#endif
-
 	}
 
 	for (int y = clip_min_y; y < clip_max_y; y++)
