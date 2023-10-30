@@ -839,53 +839,80 @@ void render_tile(Render_Context *r, int tile_index)
 					c = LaneV3(t->color.rgb) * texture_color;
 				else
 				{
+
+                    v3 kd = V3(0.8);
+                    v3 ks = V3(1);
+                    v3 ka = V3(1);
+                    
+					v3 ambient = V3(0.52, .8, .9);
+                    v3 light_diffuse = V3(1, 1, 1);
+                    v3 light_specular = V3(1, 1, 1);
+
+
+                    //ambient = V3(0.24725, 0.1995, 0.0745);
+                    //kd = V3(0.75164, 0.60648, 0.22648);
+                    //ks = V3(0.628281, 0.555802, 0.366065);
+
+
 					lane_v3 n = w0 * n0 + w1 * n1 + w2 * n2;
 
             	    
-					v3 ambient = V3(0.52, .8, .9);
 
 
-					lane_f32 diffuse = max(dot(noz(LaneV3(light_p) - p), n), LaneF32(0));
+                    lane_v3 to_light = noz(LaneV3(light_p) - p);
+
+					lane_f32 diffuse = max(dot(to_light, n), LaneF32(0));
 					
-            	    c =  LaneV3(ambient) * 0.3 + 0.8 * LaneV3(diffuse);
 
 
-					c = c * texture_color * t->color.rgb;
+                    lane_v3 reflected = noz(to_light - 2 * n * dot(to_light, n));
+                    
+                    lane_f32 specular = max(dot(reflected, noz(p)), LaneF32(0));
 
-					c.x = min(c.x, LaneF32(1));
-					c.y = min(c.y, LaneF32(1));
-					c.z = min(c.z, LaneF32(1));
+                    // TODO: !!
+                    specular *= specular;
+                    specular *= specular;
+                    specular *= specular;
+                    specular *= specular;
+
+
+                    lane_f32 dist = length(LaneV3(light_p) - p);
+
+                    lane_f32 attenuation = LaneF32(1);
+                    c = ka * LaneV3(ambient) + 
+                          attenuation * (
+                                kd * LaneV3(diffuse) * light_diffuse +
+                                ks * LaneV3(specular) * light_specular);
+
+					c *= texture_color * t->color.rgb;
+#if 0
+                    float fog_start = 20;
+                    float fog_dist = 300;
+
+                    
+                    lane_f32 dist = length(p);
+
+
+                    lane_f32 fog = max(dist - LaneF32(fog_start), LaneF32(0));
+
+                    fog = fog / fog_dist;
+                    fog = min(fog, LaneF32(1));
+
+                    c *= LaneF32(1) - fog;
+#endif
 				}
-
-
 				lane_u32 old_color32 = LaneU32(_mm256_maskload_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask.v));
-
 
 				lane_v3 old_color = LaneV3((old_color32 >> 24) & 0xFF, (old_color32 >> 16) & 0xFF, (old_color32 >> 8) & 0xFF) / 255;
 
-
 				c = old_color + alpha * (c - old_color);
 
+				c.x = min(c.x, LaneF32(1));
+				c.y = min(c.y, LaneF32(1));
+				c.z = min(c.z, LaneF32(1));
 				c = c * 255;
 
-
-
                 lane_u32 color32 = (LaneU32(c.x) << 24) | (LaneU32(c.y) << 16) | (LaneU32(c.z) << 8);
-
-
-
-#if 0
-				float light_strength = 10;
-
-				diffuse *= (1.0 / square(length(light_p - p))) * light_strength;
-				
-				v3 reflected = reflect(light_p - p, n);
-				float specular = powf(max(0, dot(noz(reflected), noz(p))), 20);
-
-				v3 c =  (ambient * 0.2  + V3(diffuse, diffuse, diffuse)* 0.8)
-					+ V3(specular, specular, specular);
-#endif
-
 
                 _mm256_maskstore_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask.v, color32.v);
                 _mm256_maskstore_ps((r->zbuffer + buffer_index), mask.v, z.v);

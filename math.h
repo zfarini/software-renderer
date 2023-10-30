@@ -3,6 +3,8 @@
 
 #include <math.h>
 
+#include <immintrin.h>
+
 typedef union
 {
 	struct { float x, y; };
@@ -73,6 +75,11 @@ internal float clamp(float a, float b, float t)
 internal v3 V3(float x, float y, float z)
 {
     return (v3){x, y, z};
+}
+
+internal v3 V3(float x)
+{
+    return (v3){x, x, x};
 }
 
 internal v3 operator+(v3 a, v3 b)
@@ -814,6 +821,11 @@ internal lane_v3 operator*(lane_v3 a, v3 b)
     return res;
 }
 
+internal lane_v3 operator*(v3 b, lane_v3 a)
+{
+    return a * b;
+}
+
 
 internal lane_v3 operator*(lane_v3 a, lane_f32 b)
 {
@@ -840,6 +852,31 @@ internal lane_v3 LaneV3(v3 v)
     res.y = LaneF32(v.y);
     res.z = LaneF32(v.z);
     return res;
+}
+
+internal lane_v3 &operator+=(lane_v3 &a, lane_v3 b)
+{
+    return a = a + b;
+}
+
+internal lane_v3 &operator-=(lane_v3 &a, lane_v3 b)
+{
+    return a = a - b;
+}
+
+internal lane_v3 &operator*=(lane_v3 &a, lane_v3 b)
+{
+    return a = a * b;
+}
+
+internal lane_v3 &operator/=(lane_v3 &a, lane_v3 b)
+{
+    return a = a / b;
+}
+
+internal lane_v3 &operator*=(lane_v3 &a, lane_f32 b)
+{
+    return a = a * b;
 }
 
 internal lane_v3 LaneV3(lane_f32 x, lane_f32 y, lane_f32 z)
@@ -876,13 +913,19 @@ internal lane_f32 rsqrt(lane_f32 x)
     return res;
 }
 
+
+internal lane_f32 length(lane_v3 v)
+{
+    return sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
 internal lane_v3 noz(lane_v3 v)
 {
-    lane_f32 length = rsqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    lane_f32 one_over_length = rsqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 
-    v.x *= length;
-    v.y *= length;
-    v.z *= length;
+    v.x *= one_over_length;
+    v.y *= one_over_length;
+    v.z *= one_over_length;
 
     return v;
 }

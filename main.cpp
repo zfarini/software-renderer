@@ -56,8 +56,8 @@ void *open_dll(char *dllname)
 
 int main(void)
 {
-	int window_width = 1024;
-	int window_height = 1024;
+	int window_width = 512;
+	int window_height = 512;
 
 	int backbuffer_width = window_width;
 	int backbuffer_height = window_height;
