@@ -849,10 +849,21 @@ void render_tile(Render_Context *r, int tile_index)
 				{
                 	lane_v2 uv = uv0 * w0 + uv1 * w1 + uv2 * w2;
 
+					int repeat = 1;
+
 					uv.x -= LaneF32(_mm256_floor_ps(uv.x.v));
 					uv.y -= LaneF32(_mm256_floor_ps(uv.y.v));
 
+#if 0
+					uvx = blend(uvx, uvx + LaneF32(1), uv.x > LaneF32(1));
+					uvx = blend(uvx, uvx - LaneF32(1), uv.x < LaneF32(-1));
 
+					uvy = blend(uvy, uvy + LaneF32(1), uv.y > LaneF32(1));
+					uvy = blend(uvy, uvy - LaneF32(1), uv.y < LaneF32(-1));
+
+					uv.x = uvx;
+					uv.y = uvy;
+#endif
 
 #if !(BILINEAR_FILTERING)
 					lane_u32 tx = LaneU32(uv.x * t->texture->width);
@@ -884,11 +895,25 @@ void render_tile(Render_Context *r, int tile_index)
 
 					//tx = min(tx, LaneU32(t->texture->width - 1));
 
+#if 1
 					lane_u32 tx_plus = min(tx + LaneU32(1), LaneU32(t->texture->width - 1));
 					lane_u32 ty_plus = min(ty + LaneU32(1), LaneU32(t->texture->height - 1));
 
 					tx = max(tx, LaneU32(0));
 					ty = max(ty, LaneU32(0));
+#else
+
+					lane_u32 tx_plus = blend(tx + LaneU32(1),
+									tx - LaneU32(t->texture->width), tx > LaneU32(t->texture->width - 1));
+
+					lane_u32 ty_plus = blend(ty + LaneU32(1),
+									ty - LaneU32(t->texture->height), ty > LaneU32(t->texture->height - 1));
+
+
+					tx = blend(tx, LaneU32(t->texture->width) + tx, tx < LaneU32(0));
+					ty = blend(ty, LaneU32(t->texture->height) + tx, ty < LaneU32(0));
+
+#endif
 
 					lane_u32 idx00 = ty * t->texture->width + tx;
 					lane_u32 idx01 = ty * t->texture->width + tx_plus;

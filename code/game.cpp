@@ -205,7 +205,7 @@ extern "C" void game_update_and_render(Game *game)
 		game->ground_tex = load_texture("data/ground.png");
 		game->gun_tex = load_texture("data/gun_tex.png");
 
-        //load_animation("data/starwars_animation", game->starwars_animation, 116, &game->starwars_tex);
+        load_animation("data/starwars_animation", game->starwars_animation, 116, &game->starwars_tex);
 
 		{
 			Texture *t = &game->checkerboard_tex;
@@ -249,7 +249,7 @@ extern "C" void game_update_and_render(Game *game)
 
 
 		game->render_context = (Render_Context *)malloc(sizeof(*game->render_context));
-		*game->render_context = new_render_context(game, game->framebuffer, 0.05f, 1000, 60, 1000000);
+		*game->render_context = new_render_context(game, game->framebuffer, 0.05f, 1000, 60, 10000000);
 
 		{
 			stbtt_fontinfo info;
@@ -446,9 +446,13 @@ extern "C" void game_update_and_render(Game *game)
 
 	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.5, 0.8, 0.2, 1));
     push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
- //   push_mesh(r, &game->starwars_animation[(game->frame / 2) % 116], V3(0, -1, -5), V3(2, 2, 2));
+	for (int z = 0; z < 5; z++)
+	{
+		for (int x = 0; x < 5; x++)
+   	 		push_mesh(r, &game->starwars_animation[(game->frame / 2) % 116], V3(x, -1, -5 - z), V3(2, 2, 2));
+	}
  
-   push_mesh(r, &game->starwars_mesh,V3(0, -1, -5), V3(2, 2, 2));
+  // push_mesh(r, &game->starwars_mesh,V3(0, -1, -5), V3(2, 2, 2));
     push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5));
 	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
 

@@ -508,8 +508,41 @@ internal lane_u32 max(lane_u32 a, lane_u32 b)
 	return res;
 }
 
+internal lane_u32 operator>(lane_u32 a, lane_u32 b)
+{
+    lane_u32 res;
 
+    res.v = _mm256_cmpgt_epi32(a.v, b.v);
 
+    return res;
+}
+
+internal lane_u32 operator==(lane_u32 a, lane_u32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_cmpeq_epi32(a.v, b.v);
+
+    return res;
+}
+
+internal lane_u32 operator>=(lane_u32 a, lane_u32 b)
+{
+	return (a > b)|(a == b);
+}
+
+internal lane_u32 operator!(lane_u32 a)
+{
+	lane_u32 res;
+
+	res.v = _mm256_andnot_si256(a.v, LaneU32(0xffffffff).v);
+	return res;
+}
+
+internal lane_u32 operator<(lane_u32 a, lane_u32 b)
+{
+	return !(a >= b);
+}
 
 
 // lane_f32
@@ -663,6 +696,9 @@ internal lane_u32 operator<=(lane_f32 a, lane_f32 b)
 
     return res;
 }
+
+
+
 
 internal lane_u32 operator==(lane_f32 a, lane_f32 b)
 {
@@ -1003,5 +1039,20 @@ internal v4 V4(v3 xyz, float w)
 	return v4{xyz.x, xyz.y, xyz.z, w};
 }
 
+internal lane_u32 blend(lane_u32 a, lane_u32 b, lane_u32 mask)
+{
+	lane_u32 res;
+
+	res.v = _mm256_blendv_epi8(a.v, b.v, mask.v);
+	return res;
+}
+
+internal lane_f32 blend(lane_f32 a, lane_f32 b, lane_u32 mask)
+{
+	lane_f32 res;
+
+	res.v = _mm256_blendv_ps(a.v, b.v, _mm256_cvtepi32_ps(mask.v));
+	return res;
+}
 
 #endif
