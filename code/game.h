@@ -15,8 +15,6 @@
 #include <inttypes.h>
 
 
-
-#define internal static
 #define DT (1.f / 60)
 #define PI 3.1415926535897932385
 #define DEG_TO_RAD (PI / 180.0)
@@ -25,7 +23,7 @@
 #include "math.h"
 
 #define THREADS 1
-#define CORE_COUNT (8)
+#define CORE_COUNT (4)
 #define CUBES_WIDTH 1
 #define CUBES_HEIGHT 1
 
@@ -34,6 +32,12 @@ typedef struct ThreadWork ThreadWork;
 #define THREAD_WORK_FUNC(func) void *func(ThreadWork *work)
 
 typedef THREAD_WORK_FUNC(ThreadWorkCallbackFn);
+
+struct String
+{
+	char *data;
+	int len;
+};
 
 struct alignas(16) ThreadWork
 {

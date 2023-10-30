@@ -9,7 +9,7 @@
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
 
 
-#define SAMPLES_PER_PIXEL_DIM (2)
+#define SAMPLES_PER_PIXEL_DIM (1)
 
 
 #define SAMPLES_PER_PIXEL (SAMPLES_PER_PIXEL_DIM * SAMPLES_PER_PIXEL_DIM)
@@ -19,6 +19,14 @@ struct Plane
 {
 	v3 normal;
 	float d;
+};
+
+struct Render_Text
+{
+	String string;
+	v2 offset;
+	float scale;
+	v4 color;
 };
 
 struct Render_Context
@@ -64,7 +72,10 @@ struct Render_Context
 	float text_du;
 	int first_char;
 	int last_char;
+	float char_height_over_width;
 	
+	Render_Text text[8192];
+	int text_count;
 };
 
 //void begin_render(Render_Context *r);

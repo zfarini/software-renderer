@@ -197,19 +197,15 @@ void load_animation(const char *dir, Mesh *out, int frame_count, Texture *textur
 
 extern "C" void game_update_and_render(Game *game)
 {
-
-
-	v3 cubes_offset = {-2, -1, -3};
-
 	if (!game->is_initialized)
     {
-        game->starwars_tex = load_texture("starwars.png");
-		game->grass_tex = load_texture("grass.png");
-		game->grass_top_tex = load_texture("grass_top.png");
-		game->ground_tex = load_texture("ground.png");
-		game->gun_tex = load_texture("gun_tex.png");
+        game->starwars_tex = load_texture("data/starwars.png");
+		game->grass_tex = load_texture("data/grass.png");
+		game->grass_top_tex = load_texture("data/grass_top.png");
+		game->ground_tex = load_texture("data/ground.png");
+		game->gun_tex = load_texture("data/gun_tex.png");
 
-        load_animation("starwars_animation", game->starwars_animation, 116, &game->starwars_tex);
+        //load_animation("data/starwars_animation", game->starwars_animation, 116, &game->starwars_tex);
 
 		{
 			Texture *t = &game->checkerboard_tex;
@@ -220,10 +216,9 @@ extern "C" void game_update_and_render(Game *game)
 			t->pixels[1] = t->pixels[2] = 0xff;
 		}
 
-        game->starwars_mesh = load_mesh("starwars.obj",  &game->starwars_tex);
-		game->gun_mesh = load_mesh("gun.obj", &game->gun_tex);
-
-        game->cow_mesh = load_mesh("cow.obj", &game->checkerboard_tex);
+        game->starwars_mesh = load_mesh("data/starwars.obj",  &game->starwars_tex);
+		game->gun_mesh = load_mesh("data/gun.obj", &game->gun_tex);
+        game->cow_mesh = load_mesh("data/cow.obj", &game->checkerboard_tex);
 
 		for (int i = 0; i < game->cow_mesh.triangle_count; i++)
 		{
@@ -232,9 +227,9 @@ extern "C" void game_update_and_render(Game *game)
 			game->cow_mesh.triangles[i].uv2 *= 20;
 		}
 
-        game->monkey_mesh = load_mesh("monkey.obj");
-		game->african_head_tex = load_texture("african_head.png");
-		game->african_head_mesh = load_mesh("african_head.obj", &game->african_head_tex);
+        game->monkey_mesh = load_mesh("data/monkey.obj");
+		game->african_head_tex = load_texture("data/african_head.png");
+		game->african_head_mesh = load_mesh("data/african_head.obj", &game->african_head_tex);
 
        game->camera_p = (v3){0, 0, 0};
 
@@ -243,7 +238,7 @@ extern "C" void game_update_and_render(Game *game)
 		for (int i = 0; i < CUBES_HEIGHT; i++)
 		{
 			for (int j = 0; j < CUBES_WIDTH; j++)
-				game->cubes_height[i][j] = (float)rand() / RAND_MAX;
+				game->cubes_height[i][j] = (float)rand() / (float)RAND_MAX;
 		}
 
 
@@ -253,7 +248,7 @@ extern "C" void game_update_and_render(Game *game)
 		{
 			stbtt_fontinfo info;
     	    long size;
-    	    unsigned char *font_contents = (unsigned char *)read_entire_file("liberation-mono.ttf");
+    	    unsigned char *font_contents = (unsigned char *)read_entire_file("data/liberation-mono.ttf");
 
     	    if (!stbtt_InitFont(&info, font_contents, 0))
     	        assert(0);
@@ -287,6 +282,7 @@ extern "C" void game_update_and_render(Game *game)
 			game->render_context->first_char = chars_first;
 			game->render_context->last_char = chars_last;
 			game->render_context->text_du = (float)font_advance_x / text_texture.width;			
+			game->render_context->char_height_over_width = ((float)font_line_height / font_advance_x);
 
 
 
@@ -338,8 +334,8 @@ extern "C" void game_update_and_render(Game *game)
 
 		game->is_initialized = 1;
     }
-	//struct timespec time_start, time_end;
-	//clock_gettime(CLOCK_MONOTONIC, &time_start);
+	struct timespec time_start, time_end;
+	clock_gettime(CLOCK_MONOTONIC, &time_start);
 
 	// update camera
 	{
@@ -444,11 +440,14 @@ extern "C" void game_update_and_render(Game *game)
 
 	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.5, 0.8, 0.2, 1));
     push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
-    push_mesh(r, &game->starwars_animation[(game->frame / 2) % 116], V3(0, -1, -5), V3(2, 2, 2));
+ //   push_mesh(r, &game->starwars_animation[(game->frame / 2) % 116], V3(0, -1, -5), V3(2, 2, 2));
+ 
+   push_mesh(r, &game->starwars_mesh,V3(0, -1, -5), V3(2, 2, 2));
     push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5));
 	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
 
 
+#if 0
 	char *s = read_entire_file(__FILE__);
 
 	d = 0.2f;
@@ -516,12 +515,23 @@ extern "C" void game_update_and_render(Game *game)
 		xoffset += d;
 	}
 	free(s);
+#endif
+
+
+	{
+		char s[512];
+
+		snprintf(s, sizeof(s), "%.2fms", game->last_frame_time);
+		push_2d_text(r, cstring(s), V2(0, 0));
+	}
 	end_render(r);
 
-	//clock_gettime(CLOCK_MONOTONIC, &time_end);
-	//game->last_frame_time = (time_end.tv_sec - time_start.tv_sec) * 1000.0 + (time_end.tv_nsec - time_start.tv_nsec) / 1000000.0;
-	//if (game->frame)
-	//	game->total_time += game->last_frame_time;
+	clock_gettime(CLOCK_MONOTONIC, &time_end);
+	game->last_frame_time = (time_end.tv_sec - time_start.tv_sec) * 1000.0 + (time_end.tv_nsec - time_start.tv_nsec) / 1000000.0;
+	if (game->frame)
+		game->total_time += game->last_frame_time;
+
+
     game->time += DT;
 	game->frame++;
 }

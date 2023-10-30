@@ -39,9 +39,7 @@ typedef struct
 } m3x3;
 
 
-#ifndef internal
-#define internal static
-#endif
+#define internal static inline
 
 internal float max(float a, float b)
 {
@@ -506,8 +504,6 @@ internal lane_u32 max(lane_u32 a, lane_u32 b)
 
 
 
-
-
 // lane_f32
 
 
@@ -951,6 +947,33 @@ internal lane_f32 min(lane_f32 a, lane_f32 b)
     return res;
 }
 
+internal lane_v3 color_lane_u32_to_lane_v3(lane_u32 color)
+{
+	lane_v3 res;
+
+	res.x = LaneF32((color >> 24) & 0xFF) / 255.f;
+	res.y = LaneF32((color >> 16) & 0xFF) / 255.f;
+	res.z = LaneF32((color >> 8)  & 0xFF) / 255.f;
+
+	return res;
+}
+
+internal lane_f32 lerp(lane_f32 a, lane_f32 t, lane_f32 b)
+{
+	return (LaneF32(1) - t) * a + t * b;
+}
+
+internal lane_v3 lerp(lane_v3 a, lane_f32 t, lane_v3 b)
+{
+	lane_v3 res;
+
+	lane_f32 one_minus_t = LaneF32(1) - t;
+
+	res.x = one_minus_t * a.x + t * b.x;
+	res.y = one_minus_t * a.y + t * b.y;
+	res.z = one_minus_t * a.z + t * b.z;
+	return res;
+}
 
 internal v4 V4(float x, float y, float z, float w)
 {
@@ -961,5 +984,6 @@ internal v4 V4(v3 xyz, float w)
 {
 	return v4{xyz.x, xyz.y, xyz.z, w};
 }
+
 
 #endif

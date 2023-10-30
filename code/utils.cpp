@@ -40,3 +40,26 @@ char *read_entire_file(const char *filename)
     fclose(f);
     return result;
 }
+
+String cstring(const char *s)
+{
+	int len = 0;
+
+	while (s[len])
+		len++;
+	return String{
+		(char *)s, len
+	};
+}
+
+String string_dup(String s)
+{
+	String res;
+
+	res.len = s.len;
+	res.data = (char *)malloc(s.len + 1);
+	res.data[res.len] = 0;
+	memcpy(res.data, s.data, s.len);
+	return res;
+}
+

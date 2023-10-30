@@ -7,7 +7,7 @@ compiler="clang++"
 #
 #echo $FLAGS
 
-random_number=$((1 + $RANDOM % 1000))
+#random_number=$((1 + $RANDOM % 1000))
 
 
 #clang++ $FLAGS game.cpp stb_load_png.o -fPIC -shared -o game.so.tmp

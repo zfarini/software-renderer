@@ -64,9 +64,7 @@ void *open_dll(char *dllname)
 }
 #endif
 
-#if 0
-int main(void)
-#else
+#if __WIN32
 #include <windows.h>
 int  WinMain(
    HINSTANCE hInstance,
@@ -74,6 +72,8 @@ int  WinMain(
    LPSTR     lpCmdLine,
    int       nShowCmd
 )
+#else
+int main(void)
 #endif
 {
 	int window_width = 512;
@@ -249,11 +249,11 @@ int  WinMain(
 		assert(game->framebuffer.pitch % 4 == 0);
 
 		game_update_and_render(game);
-		{
-			char s[128];
-			snprintf(s, sizeof(s), "%.2fms %.2fms", game->last_frame_time, game->total_time / (game->frame + 1));
-			SDL_SetWindowTitle(window, s);
-		}
+	//	{
+	//		char s[128];
+	//		snprintf(s, sizeof(s), "%.2fms %.2fms", game->last_frame_time, game->total_time / (game->frame + 1));
+	//		SDL_SetWindowTitle(window, s);
+	//	}
 
 		SDL_UnlockTexture(screen_texture);
         SDL_RenderCopy(renderer, screen_texture, NULL, NULL);
