@@ -725,44 +725,6 @@ void render_tile(Render_Context *r, int tile_index)
 	{
 		Triangle *t = &r->triangles[r->triangles_per_tile[tile_index][j]];
 
-
-		if (j == 0)
-		{
-			t->screen_p0 = V3(0, r->buffer.height  , 1);
-			t->screen_p1 = V3(r->buffer.width , r->buffer.height , 1);
-			t->screen_p2 = V3(0, 0, 1);
-			
-			t->uv0 = V2(0, 0);
-			t->uv1 = V2(1, 0);
-			t->uv2 = V2(0, 1);
-
-			t->color = V4(1, 1, 1, 1);
-			t->texture = &r->game->checkerboard_tex;
-		}
-		else
-		{
-#if 1
-			t->screen_p0 = V3(r->buffer.width , r->buffer.height, 1);
-			t->screen_p1 = V3(r->buffer.width , 0, 1);
-			t->screen_p2 = V3(0, 0, 1);
-
-			t->uv0 = V2(1, 0);
-			t->uv1 = V2(1, 1);
-			t->uv2 = V2(0, 1);
-
-			t->texture = &r->game->checkerboard_tex;
-#else
-			t->screen_p0 = V3(r->buffer.width , r->buffer.height, 1);
-			t->screen_p1 = V3(0 , r->buffer.height, 1);
-			t->screen_p2 = V3(0, 0, 1);
-#endif
-			t->color = V4(1, 0, 1, 1);
-		}
-		t->texture =0 ;
-		t->no_lighthing = 1;
-		if (j > 1)
-			break ;
-
         v3 tp0 = t->p0;
         v3 tp1 = t->p1;
         v3 tp2 = t->p2;
@@ -784,21 +746,10 @@ void render_tile(Render_Context *r, int tile_index)
 		v2 uv1 = t->uv1;
 		v2 uv2 = t->uv2;
 
-		
-
-
-#if 0
 		int min_x = t->min_x;
 		int min_y = t->min_y;
 		int max_x = t->max_x;
 		int max_y = t->max_y;
-#else
-		int min_x = fmin(t->screen_p0.x, fmin(t->screen_p1.x, t->screen_p2.x)) - 5;
-		int min_y = fmin(t->screen_p0.y, fmin(t->screen_p1.y, t->screen_p2.y)) - 5;
-		int max_x = fmax(t->screen_p0.x, fmax(t->screen_p1.x, t->screen_p2.x)) + 5;
-		int max_y = fmax(t->screen_p0.y, fmax(t->screen_p1.y, t->screen_p2.y)) + 5;
-
-#endif
 
 		if (min_x < clip_min_x) min_x = clip_min_x;
 		if (min_y < clip_min_y) min_y = clip_min_y;
@@ -817,9 +768,9 @@ void render_tile(Render_Context *r, int tile_index)
 
 		// top-left fill rule
 		// TODO: we can propably check the left edge case much easily
-		int fill_01 = ((p1.y - p0.y == 0 && p2.y > p1.y) || (p0 + dot(noz(edge01), edge02) * noz(edge01)).x < p2.x);
-		int fill_02 = ((p2.y - p0.y == 0 && p1.y > p2.y) || (p0 + dot(noz(edge02), edge01) * noz(edge02)).x < p1.x);
-		int fill_12 = ((p1.y - p2.y == 0 && p0.y > p1.y) || (p1 + dot(noz(edge12), edge01) * noz(edge12)).x < p0.x);
+//		int fill_01 = ((p1.y - p0.y == 0 && p2.y > p1.y) || (p0 + dot(noz(edge01), edge02) * noz(edge01)).x < p2.x);
+//		int fill_02 = ((p2.y - p0.y == 0 && p1.y > p2.y) || (p0 + dot(noz(edge02), edge01) * noz(edge02)).x < p1.x);
+//		int fill_12 = ((p1.y - p2.y == 0 && p0.y > p1.y) || (p1 + dot(noz(edge12), edge01) * noz(edge12)).x < p0.x);
 
     	for (int y = min_y; y < max_y; y++)
     	{
@@ -829,7 +780,7 @@ void render_tile(Render_Context *r, int tile_index)
                 lane_u32 lane_ix = LaneU32(0, 1, 2, 3, 4, 5, 6, 7) + LaneU32(ix);
 
                 lane_u32 x = LaneU32(min_x) + 
-                        (lane_ix >> 0); // TODO: !!!
+                        (lane_ix >> 2); // TODO: !!!
 
                 lane_v2 pixel_offset = r->samples_offset[ix % SAMPLES_PER_PIXEL];
 
@@ -844,7 +795,7 @@ void render_tile(Render_Context *r, int tile_index)
 
 				lane_f32 zero = LaneF32(0);
 
-#if 1
+#if 0
 				lane_u32 mask = 
 					(w0 > zero | (w0 == zero & LaneU32(fill_12 ? 0xffffffff : 0))) &
 					(w1 > zero | (w1 == zero & LaneU32(fill_02 ? 0xffffffff : 0))) &
@@ -880,8 +831,8 @@ void render_tile(Render_Context *r, int tile_index)
                 __m256 zbuf = _mm256_maskload_ps(r->zbuffer + buffer_index, mask.v);
 
                 mask = mask & (z < LaneF32(zbuf));
-               // if (_mm256_testz_si256(mask.v, mask.v))
-                 //   continue ;
+                if (_mm256_testz_si256(mask.v, mask.v))
+                    continue ;
 
 				w0 *= z * p0.z;
 				w1 *= z * p1.z;
@@ -903,7 +854,7 @@ void render_tile(Render_Context *r, int tile_index)
 
 
 
-#if 1
+#if !(BILINEAR_FILTERING)
 					lane_u32 tx = LaneU32(uv.x * t->texture->width);
 					lane_u32 ty = LaneU32(uv.y * t->texture->height);
 					tx = min(tx, LaneU32(t->texture->width - 1));
@@ -919,13 +870,8 @@ void render_tile(Render_Context *r, int tile_index)
 					lane_f32 sx = uv.x * t->texture->width;
 					lane_f32 sy = uv.y * t->texture->height;
 
-#if 0
-					lane_u32 tx = LaneU32(LaneF32(_mm256_round_ps(sx.v, _MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)));
-					lane_u32 ty = LaneU32(LaneF32(_mm256_round_ps(sy.v, _MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)));
-#else
 					lane_u32 tx = LaneU32(LaneF32(_mm256_floor_ps((sx - LaneF32(0.5f)).v)));
 					lane_u32 ty = LaneU32(LaneF32(_mm256_floor_ps((sy - LaneF32(0.5f)).v)));
-#endif
 
 					lane_f32 ftx = sx - LaneF32(0.5f);
 					lane_f32 fty = sy - LaneF32(0.5f);
@@ -967,9 +913,6 @@ void render_tile(Render_Context *r, int tile_index)
 										lerp(color00, fx, color01),
 										fy,
 										lerp(color10, fx, color11));
-				//	texture_color = 
-				//					lerp(color00, fx, color01);
-
 
 					alpha *= lerp(
 								lerp(LaneF32(color32_00 & 0xFF) / 255.f, fx, LaneF32(color32_01 & 0xFF) / 255.f),

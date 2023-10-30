@@ -211,9 +211,15 @@ extern "C" void game_update_and_render(Game *game)
 			Texture *t = &game->checkerboard_tex;
 
 			t->width = t->height = t->pitch = 2;
-			t->pixels = (uint32_t *)calloc(4, sizeof(uint32_t));
-			t->pixels[0] = t->pixels[3] = 0xffffffff;
-			t->pixels[1] = t->pixels[2] = 0xffff;
+			t->pixels = (uint32_t *)calloc(t->width * t->height, sizeof(uint32_t));
+
+			for (int y = 0; y < t->height; y++)
+			{
+				for (int x = 0; x <t->width; x++)
+					t->pixels[y * t->width + x] = (x + y)% 2 ? 0xffffffff : 0xff;
+			}
+//			t->pixels[0] = t->pixels[3] = 0xffffffff;
+//			t->pixels[1] = t->pixels[2] = 0xff;
 		}
 
         game->starwars_mesh = load_mesh("data/starwars.obj",  &game->starwars_tex);
