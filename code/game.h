@@ -22,7 +22,7 @@
 
 #include "math.h"
 
-#define THREADS 1
+#define THREADS 0
 #define CORE_COUNT (4)
 #define CUBES_WIDTH 1
 #define CUBES_HEIGHT 1

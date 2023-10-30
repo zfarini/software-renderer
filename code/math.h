@@ -428,6 +428,14 @@ internal lane_u32 operator+(lane_u32 a, lane_u32 b)
     return res;
 }
 
+internal lane_u32 operator-(lane_u32 a, lane_u32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_sub_epi32(a.v, b.v);
+    return res;
+}
+
 internal lane_u32 operator*(lane_u32 a, lane_u32 b)
 {
     lane_u32 res;
@@ -655,6 +663,16 @@ internal lane_u32 operator<=(lane_f32 a, lane_f32 b)
 
     return res;
 }
+
+internal lane_u32 operator==(lane_f32 a, lane_f32 b)
+{
+    lane_u32 res;
+
+    res.v = _mm256_castps_si256(_mm256_cmp_ps(a.v, b.v, _CMP_EQ_OS));
+
+    return res;
+}
+
 // lane v2
 
 

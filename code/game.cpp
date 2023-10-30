@@ -213,7 +213,7 @@ extern "C" void game_update_and_render(Game *game)
 			t->width = t->height = t->pitch = 2;
 			t->pixels = (uint32_t *)calloc(4, sizeof(uint32_t));
 			t->pixels[0] = t->pixels[3] = 0xffffffff;
-			t->pixels[1] = t->pixels[2] = 0xff;
+			t->pixels[1] = t->pixels[2] = 0xffff;
 		}
 
         game->starwars_mesh = load_mesh("data/starwars.obj",  &game->starwars_tex);
