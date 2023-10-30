@@ -74,12 +74,12 @@ internal float clamp(float a, float b, float t)
 
 internal v3 V3(float x, float y, float z)
 {
-    return (v3){x, y, z};
+    return v3{x, y, z};
 }
 
 internal v3 V3(float x)
 {
-    return (v3){x, x, x};
+    return v3{x, x, x};
 }
 
 internal v3 operator+(v3 a, v3 b)
@@ -166,7 +166,7 @@ internal v3 noz(v3 a)
     float len = length(a);
 
     if (len <= 0.00001f)
-        return (v3){};
+        return v3{};
 	return a / len;
 }
 
@@ -181,7 +181,7 @@ internal v3 cross(v3 a, v3 b)
 
 internal v2 V2(float x, float y)
 {
-    return (v2){x, y};
+    return v2{x, y};
 }
 
 internal v2 operator+(v2 a, v2 b)
@@ -253,7 +253,7 @@ internal v2 noz(v2 a)
 {
 	float len = length(a);
 	if (len <= 0.00001f)
-		return (v2){};
+		return v2{};
     return a / len;
 }
 
@@ -952,12 +952,12 @@ internal lane_f32 min(lane_f32 a, lane_f32 b)
 }
 
 
-v4 V4(float x, float y, float z, float w)
+internal v4 V4(float x, float y, float z, float w)
 {
 	return v4{x, y, z, w};
 }
 
-v4 V4(v3 xyz, float w)
+internal v4 V4(v3 xyz, float w)
 {
 	return v4{xyz.x, xyz.y, xyz.z, w};
 }

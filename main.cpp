@@ -1,9 +1,16 @@
 #include "game.h"
 #include "math.h"
+
+#if _WIN32
+#include "SDL_windows/SDL.h"
+#include "SDL_windows/SDL_thread.h"
+#else
 #include "SDL/SDL.h"
 #include "SDL/SDL_thread.h"
 #include <dirent.h>
 #include "dlfnc.h"
+#endif
+
 #include <time.h>
 #include <sys/stat.h> 
 
@@ -23,8 +30,10 @@ time_t get_last_write_time(const char *filename)
     return result;
 }
 
+#if CODE_RELOADING
 char *get_game_dll_name()
 {
+	
 	DIR *dir = opendir(".");
 	assert(dir);
 
@@ -53,8 +62,19 @@ void *open_dll(char *dllname)
 	assert(dll);
 	return dll;
 }
+#endif
 
+#if 0
 int main(void)
+#else
+#include <windows.h>
+int  WinMain(
+   HINSTANCE hInstance,
+   HINSTANCE hPrevInstance,
+   LPSTR     lpCmdLine,
+   int       nShowCmd
+)
+#endif
 {
 	int window_width = 512;
 	int window_height = 512;
@@ -240,4 +260,5 @@ int main(void)
         SDL_RenderPresent(renderer);
 	}
 	//unlink(dll_name);
+	return 0;
 }

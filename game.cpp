@@ -165,7 +165,7 @@ extern "C" int game_thread_work(void *data)
 
 		if (tile >= TILES_COUNT)
 		{
-			usleep(100); // TODO: better sleep
+			//usleep(100); // TODO: better sleep
 			continue;
 		}
 		render_tile(game->render_context, tile);
@@ -338,8 +338,8 @@ extern "C" void game_update_and_render(Game *game)
 
 		game->is_initialized = 1;
     }
-	struct timespec time_start, time_end;
-	clock_gettime(CLOCK_MONOTONIC, &time_start);
+	//struct timespec time_start, time_end;
+	//clock_gettime(CLOCK_MONOTONIC, &time_start);
 
 	// update camera
 	{
@@ -518,10 +518,10 @@ extern "C" void game_update_and_render(Game *game)
 	free(s);
 	end_render(r);
 
-	clock_gettime(CLOCK_MONOTONIC, &time_end);
-	game->last_frame_time = (time_end.tv_sec - time_start.tv_sec) * 1000.0 + (time_end.tv_nsec - time_start.tv_nsec) / 1000000.0;
-	if (game->frame)
-		game->total_time += game->last_frame_time;
+	//clock_gettime(CLOCK_MONOTONIC, &time_end);
+	//game->last_frame_time = (time_end.tv_sec - time_start.tv_sec) * 1000.0 + (time_end.tv_nsec - time_start.tv_nsec) / 1000000.0;
+	//if (game->frame)
+	//	game->total_time += game->last_frame_time;
     game->time += DT;
 	game->frame++;
 }

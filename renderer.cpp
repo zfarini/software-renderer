@@ -289,8 +289,8 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 		v3 p1 = prespective_projection(r, t->p1);
 		v3 p2 = prespective_projection(r, t->p2);
 	
-		v2 tmin = {fmin(p0.x, fmin(p1.x, p2.x)), fmin(p0.y, fmin(p1.y, p2.y))};
-		v2 tmax = {fmax(p0.x, fmax(p1.x, p2.x)), fmax(p0.y, fmax(p1.y, p2.y))};
+		v2 tmin = {fminf(p0.x, fminf(p1.x, p2.x)), fminf(p0.y, fminf(p1.y, p2.y))};
+		v2 tmax = {fmaxf(p0.x, fmaxf(p1.x, p2.x)), fmaxf(p0.y, fmaxf(p1.y, p2.y))};
 
 		t->screen_p0 = p0;
 		t->screen_p1 = p1;
@@ -967,7 +967,7 @@ void end_render(Render_Context *r)
 	{
         if (r->game->tiles_finished == TILES_COUNT)
             break ;
-		usleep(100);
+		//usleep(100);
 	}
 #else
 	for (int i = 0; i < TILES_COUNT; i++)

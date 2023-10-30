@@ -7,11 +7,9 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <unistd.h>
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
-#include <stdatomic.h>
 #include <assert.h>
 #include <stdalign.h>
 #include <inttypes.h>
@@ -27,7 +25,7 @@
 #include "math.h"
 
 #define THREADS 1
-#define CORE_COUNT (4)
+#define CORE_COUNT (8)
 #define CUBES_WIDTH 1
 #define CUBES_HEIGHT 1
 
