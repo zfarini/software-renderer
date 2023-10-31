@@ -183,7 +183,6 @@ void get_tile_clip_bounds(Render_Context *r, int index, v2 &min_clip, v2 &max_cl
 
 void push_triangle(Render_Context *r, Triangle *triangle)
 {
-
 	uint64_t counter0 = __rdtsc();
 
 	r->triangles_pushed++;
@@ -432,6 +431,19 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
 
 void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 {
+#if 1
+    float thickness = 0.01f;
+
+    v3 radius = V3(thickness, thickness, length(p1 - p0) * 0.5f);
+
+	v3 up = V3(0, 0, -1);
+
+	v3 w = noz(p1 - p0);
+	v3 u = noz(cross(up, w));
+	v3 v = noz(cross(w, u));
+
+	push_cube(r, p0 + (p1 - p0) * 0.5f, u, v, w, radius, color);
+#else
 	p0 = world_to_camera(r, p0);
 	p1 = world_to_camera(r, p1);
 	// clip
@@ -541,6 +553,7 @@ void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 		if (abs(p_x - p0_x) > abs(p1_x - p0_x) || abs(p_y - p0_y) > abs(p1_y - p0_y))
 			break ;
 	}
+#endif
 }
 
 #if 0

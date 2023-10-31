@@ -249,11 +249,11 @@ int main(void)
 		assert(game->framebuffer.pitch % 4 == 0);
 
 		game_update_and_render(game);
-	//	{
-	//		char s[128];
-	//		snprintf(s, sizeof(s), "%.2fms %.2fms", game->last_frame_time, game->total_time / (game->frame + 1));
-	//		SDL_SetWindowTitle(window, s);
-	//	}
+		{
+			char s[128];
+			snprintf(s, sizeof(s), "%.2fms %.2fms", game->last_frame_time, game->total_time / (game->frame + 1));
+			SDL_SetWindowTitle(window, s);
+		}
 
 		SDL_UnlockTexture(screen_texture);
         SDL_RenderCopy(renderer, screen_texture, NULL, NULL);

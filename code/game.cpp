@@ -205,7 +205,7 @@ extern "C" void game_update_and_render(Game *game)
 		game->ground_tex = load_texture("data/ground.png");
 		game->gun_tex = load_texture("data/gun_tex.png");
 
-        load_animation("data/starwars_animation", game->starwars_animation, 116, &game->starwars_tex);
+     //   load_animation("data/starwars_animation", game->starwars_animation, 116, &game->starwars_tex);
 
 		{
 			Texture *t = &game->checkerboard_tex;
@@ -411,7 +411,7 @@ extern "C" void game_update_and_render(Game *game)
 	}
 #endif 
 
-	float d = 1000;
+	float d = 10;
 	{
 		Triangle t = {};
 
@@ -444,87 +444,66 @@ extern "C" void game_update_and_render(Game *game)
 
 
 
+    {
+        v3 p = V3(0, 0, -2);
+        v3 dir = noz(V3(0, 0, 1));
+
+        v3 d = noz(V3(0, -1, 0));
+
+        float spine_length = 0.5f;
+        float leg_length = 0.35;
+        float hand_length = 0.3;
+        float hand_offset = spine_length * 0.2f;
+
+        v4 color = V4(1, 0, 0, 1);
+
+        // spine
+        push_line(r, p, p + spine_length * d, V4(1, 0, 0, 1));
+
+        v3 xaxis = d;
+        v3 yaxis = noz(cross(dir, d));
+        v3 hand_p = p + d * hand_offset;
+
+        float left_hand_angle = -PI / 6;
+        v3 left_hand_p = hand_p + (cos(left_hand_angle) * xaxis +  sin(left_hand_angle) * yaxis) *  hand_length;
+        push_line(r, hand_p, left_hand_p, V4(0, 1, 0, 1));
+
+        float right_hand_angle = PI / 6;
+        v3 right_hand_p = hand_p + (cos(right_hand_angle) * xaxis +  sin(right_hand_angle) * yaxis) *  hand_length;
+        push_line(r, hand_p, right_hand_p, V4(1, 1, 0, 1));
+
+        v3 leg_p = p + d * spine_length;
+
+        float left_leg_angle = -PI / 6;
+        v3 left_leg_p = leg_p + (cos(left_leg_angle) * xaxis +  sin(left_leg_angle) * yaxis) *  leg_length;
+        push_line(r, leg_p, left_leg_p, V4(0, 1, 1, 1));
+
+        float right_leg_angle = PI / 6;
+        v3 right_leg_p = leg_p + (cos(right_leg_angle) * xaxis +  sin(right_leg_angle) * yaxis) *  leg_length;
+        push_line(r, leg_p, right_leg_p, V4(1, 0, 1, 1));
+
+
+
+        float head_radius = 0.1f;
+        v3 head_p =  p - d * head_radius;
+
+        push_cube(r, head_p, xaxis, yaxis, dir, V3(head_radius), V4(1, 1, 1, 1));
+
+        // left hand
+        
+    }
+#if 0
 	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.5, 0.8, 0.2, 1));
     push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
-	for (int z = 0; z < 5; z++)
-	{
-		for (int x = 0; x < 5; x++)
-   	 		push_mesh(r, &game->starwars_animation[(game->frame / 2) % 116], V3(x, -1, -5 - z), V3(2, 2, 2));
-	}
+	//for (int z = 0; z < 5; z++)
+	//{
+	//	for (int x = 0; x < 5; x++)
+   	// 		push_mesh(r, &game->starwars_animation[(game->frame / 2) % 116], V3(x, -1, -5 - z), V3(2, 2, 2));
+	//}
  
-  // push_mesh(r, &game->starwars_mesh,V3(0, -1, -5), V3(2, 2, 2));
+    push_mesh(r, &game->starwars_mesh,V3(0, -1, -5), V3(2, 2, 2));
     push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5));
 	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
-
-
-#if 0
-	char *s = read_entire_file(__FILE__);
-
-	d = 0.2f;
-	float yoffset = 0;
-	float xoffset = 0;
-
-	for (int i = 0; s[i]; i++)
-	{
-		if (s[i] == '\n')
-		{
-			yoffset += d;
-			xoffset = 0;
-			continue;
-		}
-		if (s[i] < game->render_context->first_char ||
-			s[i] >= game->render_context->last_char)
-		{
-			xoffset += d;
-			continue ;
-		}
-
-
-		float ux_min = (s[i] - game->render_context->first_char) * game->render_context->text_du;
-		float ux_max = ux_min + game->render_context->text_du;
-
-		v3  offset = V3(xoffset, 524 * d - yoffset, -2);
-
-
-		{
-
-			Triangle t = {};
-
-			t.p0 = V3(0, 0, 0);
-			t.p1 = V3(d, 0, 0);
-			t.p2 = V3(d, d, 0);
-
-			t.p0 += offset, t.p1 += offset, t.p2 += offset;
-
-			t.uv0 = V2(ux_min, 0);
-			t.uv1 = V2(ux_max, 0);
-			t.uv2 = V2(ux_max, 1);
-			t.color = V4(1, 1, 1, 1);
-			t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
-			t.texture = &game->render_context->text_texture;
-			t.no_lighthing = 1;
-			push_triangle(r, &t);
-		}
-		{
-			Triangle t = {};
-
-			t.p0 = V3(0, 0, 0);
-			t.p1 = V3(d, d, 0);
-			t.p2 = V3(0, d,  0);
-
-			t.p0 += offset, t.p1 += offset, t.p2 += offset;
-			t.uv0 = V2(ux_min, 0);
-			t.uv1 = V2(ux_max, 1);
-			t.uv2 = V2(ux_min, 1);
-			t.color = V4(1, 1, 1, 1);
-			t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
-			t.texture = &game->render_context->text_texture;
-			t.no_lighthing = 1;
-			push_triangle(r, &t);
-		}
-		xoffset += d;
-	}
-	free(s);
 #endif
 
 

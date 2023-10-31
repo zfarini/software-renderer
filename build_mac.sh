@@ -13,7 +13,8 @@ compiler="clang++"
 #clang++ $FLAGS game.cpp stb_load_png.o -fPIC -shared -o game.so.tmp
 #mv game.so.tmp game$random_number.so
 
-$compiler main.cpp stb_load_png.o $FLAGS
+#$compiler code/stb_load_png.cpp $FLAGS -c -o stb_load_png_mac.o
+$compiler code/main.cpp stb_load_png_mac.o $FLAGS
 
 #clang++ main.cpp -ldl $FLAGS
 
