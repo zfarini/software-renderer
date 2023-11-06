@@ -183,9 +183,8 @@ void get_tile_clip_bounds(Render_Context *r, int index, v2 &min_clip, v2 &max_cl
 
 void push_triangle(Render_Context *r, Triangle *triangle)
 {
-	uint64_t counter0 = __rdtsc();
+    TIMED_FUNCTION();
 
-	r->triangles_pushed++;
 	// TODO: this is somehow was bigger than 16 at some point idk if its a bug?
 	Triangle triangles[(1 << 5)];
 	int triangle_count = 1;
@@ -352,7 +351,6 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 			}
 		}
 	}
-	r->counter += __rdtsc() - counter0;
 }
 
 void push_line(Render_Context *r, v3 p0, v3 p1, v4 color);
@@ -672,6 +670,8 @@ void push_sphere(Render_Context *r, v3 center, float radius, v4 color)
 
 void push_mesh(Render_Context *r, Mesh *mesh, v3 position, v3 scale = V3(1, 1, 1), v3 rotation = V3(0, 0, 0), v4 color = V4(1, 1, 1, 1))
 {
+    TIMED_FUNCTION();
+
     m3x3 rot_matrix = z_rotation(rotation.z) * (y_rotation(rotation.y) * x_rotation(rotation.x));
     m3x3 inv_matrix = x_rotation(-rotation.x) * (y_rotation(-rotation.y) * z_rotation(-rotation.z));
     m3x3 normal_matrix = transpose(inv_matrix);
@@ -1072,7 +1072,7 @@ void render_tile(Render_Context *r, int tile_index)
 
 void end_render(Render_Context *r)
 {
-	{
+	{ // TODO: disable z-buffer for these triangles?
 		for (int i = 0; i < r->text_count; i++)
 		{
 			Render_Text *text = &r->text[i];
@@ -1080,7 +1080,7 @@ void end_render(Render_Context *r)
 			float xoffset = 0;
 			float yoffset = 0;
 	
-			float dx = r->film_width * 0.02 * text->scale;
+			float dx = r->film_width * r->game->text_dx * text->scale;
 			float dy = dx * (r->char_height_over_width);
 
 			for (int i = 0; i < text->string.len; i++)
@@ -1101,8 +1101,8 @@ void end_render(Render_Context *r)
 				float ux_min = (c - r->first_char) * r->text_du;
 				float ux_max = ux_min + r->text_du;
 
-				v3 offset = V3(text->offset.x + xoffset, 
-							   text->offset.y + yoffset,
+				v3 offset = V3(text->offset.x * r->film_width + xoffset, 
+							   (-text->offset.y) * r->film_height + yoffset,
 							   -r->near_clip_plane - 0.001f);
 
 				offset += V3(-r->film_width, r->film_height, 0) * 0.5f;
@@ -1153,8 +1153,6 @@ void end_render(Render_Context *r)
 		}
 	}
 
-	r->avg_counter += r->counter;
-	//printf("cycle_count: %" PRIu64", triangles_push: %d, rendered: %d (avg cycle %.0lf)\n", r->counter, r->triangles_pushed, r->triangles_rendered, ((double)r->avg_counter / (r->game->frame + 1) / 1000.0));
 	
 #if THREADS
     r->game->tiles_finished = 0;
@@ -1178,67 +1176,6 @@ void end_render(Render_Context *r)
 #else
 	for (int i = 0; i < TILES_COUNT; i++)
 		render_tile(r, i);
-#endif
-#if 0
-	for (int i = 0; i < r->text_count; i++)
-	{
-		Render_Text *text = &r->text[i];
-		
-		float xoffset = 0;
-		float yoffset = 0;
-
-		for (int i = 0; i < text->string.len; i++)
-		{
-			char c = text->string.data[i];
-
-			if (c == '\n')
-			{
-				xoffset = 0;
-				yoffset += ;
-			}
-			if (c < r->first_char || c >= r->last_char)
-			{
-				// draw some box (or maybe '?'
-				continue ;	
-			}
-			float ux_min = (c - game->render_context->first_char) * game->render_context->text_du;
-			float ux_max = ux_min + game->render_context->text_du;
-
-			int min_x;
-			int max_x;
-			int min_y;
-			int max_y;
-
-			min_x = 0;
-			min_y = 0;
-			max_x = ;
-			max_y = ;
-			for (int y = min_y; y < max_y; y++)
-			{
-				for (int x = min_x; x < max_x; x++)
-				{
-					float u = lerp(ux_min, (float)(x - min_x) / (max_x - min_x), ux_max);
-					float v = (float)(y - min_y) / (max_y - min_y);
-
-					int tx = u * game->text_texture.width;
-					int ty = v * game->text_texture.height;
-
-					float alpha = (*(game->text_texture + ty * game->text_texture.width
-							+ tx) & 0xFF) / 255.0f;
-
-					alpha *= text->color.a;
-					
-					uint32_t *pixel = *(r->buffer.pixels + y * r->buffer.width + x);
-
-					v3 old_color = color_u32_to_v3(*pixel);
-
-					v3 color = lerp(old_color, alpha, text->color.rgb);
-
-					*pixel = color_v3_to_u32(color);
-				}
-			}
-		}
-	}
 #endif
 }
 

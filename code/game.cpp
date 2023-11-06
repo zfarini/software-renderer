@@ -291,6 +291,9 @@ extern "C" void game_update_and_render(Game *game)
 			game->render_context->char_height_over_width = ((float)font_line_height / font_advance_x);
 
 
+            // TODO: this is propably wrong for non square display?
+            game->text_dx = (1.f / 80);
+            game->text_dy = game->text_dx * ((float)font_line_height / font_advance_x);
 
 			uint8_t *bitmap = (uint8_t *)malloc(font_line_height * font_advance_x);
 
@@ -444,6 +447,8 @@ extern "C" void game_update_and_render(Game *game)
 
 
 
+#if 0
+
     {
         v3 p = V3(0, 0, -2);
         v3 dir = noz(V3(0, 0, 1));
@@ -492,7 +497,8 @@ extern "C" void game_update_and_render(Game *game)
         // left hand
         
     }
-#if 0
+#endif
+#if 1
 	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.5, 0.8, 0.2, 1));
     push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
 	//for (int z = 0; z < 5; z++)
@@ -507,12 +513,31 @@ extern "C" void game_update_and_render(Game *game)
 #endif
 
 
+    //game->text_dy;
+    //game->text_dx;
+
+    float y = 0;
 	{
 		char s[512];
 
 		snprintf(s, sizeof(s), "%.2fms", game->last_frame_time);
 		push_2d_text(r, cstring(s), V2(0, 0));
+        y += game->text_dy;
 	}
+    {
+        for (int i = 0; i < timed_blocks_count; i++)
+        {
+            TimedBlockData *d = &timed_blocks[i];
+
+		    char s[512];
+            uint64_t c = d->cycle_count - d->childs_cycle_count;
+		    snprintf(s, sizeof(s), "%s:%d: %s: %llu %llu (%d) avg:%llu", d->filename, d->line, d->function_name, c, d->childs_cycle_count, d->calls_count, (uint64_t)ceil((double)c / d->calls_count));
+		    push_2d_text(r, cstring(s), V2(0, y), 1);
+            y += game->text_dy;
+        }
+        timed_blocks_count = 0;
+        timed_blocks_opened_count = 0;
+    }
 	end_render(r);
 
 	clock_gettime(CLOCK_MONOTONIC, &time_end);
@@ -524,3 +549,4 @@ extern "C" void game_update_and_render(Game *game)
     game->time += DT;
 	game->frame++;
 }
+

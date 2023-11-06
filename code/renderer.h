@@ -1,6 +1,7 @@
 #ifndef RENDERER_H
 #define RENDERER_H
 
+#include "game.h"
 #include "math.h"
 #include <immintrin.h>
 

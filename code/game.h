@@ -134,6 +134,8 @@ typedef struct
 
 	Render_Context *render_context;
 
+    float text_dx, text_dy;
+
 	volatile int next_thread_index;
 	volatile int next_tile_index;
     volatile int tiles_finished;
@@ -148,6 +150,67 @@ typedef int GameThreadWorkFn(void *);
 
 Texture load_texture(const char *filename);
 
+struct TimedBlock;
 
+struct TimedBlockData
+{
+    int line;
+    const char *function_name;
+    const char *filename;
+    uint64_t cycle_count;
+    uint64_t childs_cycle_count;
+    int calls_count;
+};
+
+// TODO: I guess these stuff will be per thread
+TimedBlockData timed_blocks[128000];
+
+
+TimedBlock *timed_blocks_opened[64000];
+int timed_blocks_count;
+int timed_blocks_opened_count;
+
+struct TimedBlock
+{
+    TimedBlockData data;
+
+    TimedBlock(int line, const char *function_name, const char *filename)
+    {
+        data.line = line;
+        data.function_name = function_name;
+        data.filename = filename;
+        timed_blocks_opened[timed_blocks_opened_count++] = this;
+        data.cycle_count = __rdtsc();
+        data.childs_cycle_count = 0;
+    }
+
+    ~TimedBlock()
+    {
+        data.cycle_count = __rdtsc() - data.cycle_count;
+        data.calls_count = 1;
+
+        if (timed_blocks_opened_count > 1)
+            timed_blocks_opened[timed_blocks_opened_count - 2]->data.childs_cycle_count += data.cycle_count;
+
+        timed_blocks_opened_count--;
+        for (int i = 0; i < timed_blocks_count; i++)
+        {
+            if (data.function_name == timed_blocks[i].function_name)
+            {
+                timed_blocks[i].calls_count++;
+                timed_blocks[i].cycle_count += data.cycle_count;
+                timed_blocks[i].childs_cycle_count += data.childs_cycle_count;
+                return ;
+            }
+        }
+
+
+
+        timed_blocks[timed_blocks_count++] = data;
+    }
+};
+
+
+#define TIMED_FUNCTION() TimedBlock __FUNCTION__##timed_block_(__LINE__, __FUNCTION__, __FILE__)
 
 #endif
