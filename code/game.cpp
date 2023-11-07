@@ -513,6 +513,8 @@ extern "C" void game_update_and_render(Game *game)
 #endif
 
 
+    push_box_outline(r, V3(0, 4, 0), V3(1, 1, 1));
+
     //game->text_dy;
     //game->text_dx;
 

@@ -430,13 +430,18 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
 void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 {
 #if 1
-    float thickness = 0.01f;
+    float thickness = 0.1f;
 
     v3 radius = V3(thickness, thickness, length(p1 - p0) * 0.5f);
 
-	v3 up = V3(0, 0, -1);
 
 	v3 w = noz(p1 - p0);
+
+	v3 up = V3(0, 0, -1);
+
+    if (fabsf(dot(up, w)) > 0.9)
+        up = V3(0, 1, 0);
+
 	v3 u = noz(cross(up, w));
 	v3 v = noz(cross(w, u));
 
@@ -552,6 +557,41 @@ void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 			break ;
 	}
 #endif
+}
+
+void push_box_outline(Render_Context *r, v3 center, v3 radius, v4 color = V4(1, 1, 1, 1))
+{
+    v3 u = V3(1, 0, 0);
+    v3 v = V3(0, 1, 0);
+    v3 w = V3(0, 0, 1);
+
+    u *= radius.x;
+    v *= radius.z;
+    w *= radius.y;
+
+	v3 p00 = center - u - v + w;
+	v3 p01 = center + u - v + w;
+	v3 p02 = center + u + v + w;
+	v3 p03 = center - u + v + w;
+	v3 p10 = center - u - v - w;
+	v3 p11 = center + u - v - w;
+	v3 p12 = center + u + v - w;
+	v3 p13 = center - u + v - w;
+
+    push_line(r, p00, p01, color);
+    push_line(r, p01, p02, color);
+    push_line(r, p02, p03, color);
+    push_line(r, p00, p03, color);
+
+    push_line(r, p10, p11, color);
+    push_line(r, p11, p12, color);
+    push_line(r, p12, p13, color);
+    push_line(r, p10, p13, color);
+
+    push_line(r, p00, p10, color);
+    push_line(r, p01, p11, color);
+    push_line(r, p02, p12, color);
+    push_line(r, p03, p13, color);
 }
 
 #if 0
