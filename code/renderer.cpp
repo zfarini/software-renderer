@@ -1015,7 +1015,7 @@ void render_tile(Render_Context *r, int tile_index)
 
                     v3 kd = V3(0.8);
                     v3 ks = V3(1);
-                    v3 ka = V3(1);
+                    v3 ka = V3(0.3);
                     
 					v3 ambient = V3(0.52, .8, .9);
                     v3 light_diffuse = V3(1, 1, 1);

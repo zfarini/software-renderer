@@ -499,7 +499,7 @@ extern "C" void game_update_and_render(Game *game)
     }
 #endif
 #if 1
-	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.5, 0.8, 0.2, 1));
+	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.8, 0.8, 0.8, 1));
     push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
 	//for (int z = 0; z < 5; z++)
 	//{
@@ -510,6 +510,7 @@ extern "C" void game_update_and_render(Game *game)
     push_mesh(r, &game->starwars_mesh,V3(0, -1, -5), V3(2, 2, 2));
     push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5));
 	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
+
 #endif
 
 
