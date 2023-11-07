@@ -355,7 +355,7 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 
 void push_line(Render_Context *r, v3 p0, v3 p1, v4 color);
 
-void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, Texture *top = 0, Texture *sides = 0)
+void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, Texture *top = 0, Texture *sides = 0, int no_lighthing = 0)
 {
     u = noz(u) * radius.x;
     v = noz(v) * radius.y;
@@ -403,6 +403,7 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
         t.uv0 = uv0;
         t.uv1 = uv1;
         t.uv2 = uv2;
+        t.no_lighthing = no_lighthing;
 
         v3 normal = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
         t.n0 = normal;
@@ -430,7 +431,7 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
 void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 {
 #if 1
-    float thickness = 0.1f;
+    float thickness = 0.01f;
 
     v3 radius = V3(thickness, thickness, length(p1 - p0) * 0.5f);
 
@@ -445,7 +446,7 @@ void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 	v3 u = noz(cross(up, w));
 	v3 v = noz(cross(w, u));
 
-	push_cube(r, p0 + (p1 - p0) * 0.5f, u, v, w, radius, color);
+	push_cube(r, p0 + (p1 - p0) * 0.5f, u, v, w, radius, color, 0, 0, 1);
 #else
 	p0 = world_to_camera(r, p0);
 	p1 = world_to_camera(r, p1);
@@ -566,8 +567,8 @@ void push_box_outline(Render_Context *r, v3 center, v3 radius, v4 color = V4(1, 
     v3 w = V3(0, 0, 1);
 
     u *= radius.x;
-    v *= radius.z;
-    w *= radius.y;
+    v *= radius.y;
+    w *= radius.z;
 
 	v3 p00 = center - u - v + w;
 	v3 p01 = center + u - v + w;
@@ -716,6 +717,9 @@ void push_mesh(Render_Context *r, Mesh *mesh, v3 position, v3 scale = V3(1, 1, 1
     m3x3 inv_matrix = x_rotation(-rotation.x) * (y_rotation(-rotation.y) * z_rotation(-rotation.z));
     m3x3 normal_matrix = transpose(inv_matrix);
     
+    v3 min_box = V3(FLT_MAX);
+    v3 max_box = V3(-FLT_MAX);
+
     for (int i = 0; i < mesh->triangle_count; i++)
     {
         Triangle t = mesh->triangles[i];
@@ -739,6 +743,9 @@ void push_mesh(Render_Context *r, Mesh *mesh, v3 position, v3 scale = V3(1, 1, 1
 		v3 nc0 = (t.n0 + V3(1, 1, 1)) * 0.5f;
 		v3 nc1 = (t.n1 + V3(1, 1, 1)) * 0.5f;
 		v3 nc2 = (t.n2 + V3(1, 1, 1)) * 0.5f;
+
+        min_box = min(min_box, min(min(t.p0, t.p1), t.p2));
+        max_box = max(max_box, max(max(t.p0, t.p1), t.p2));
 		//if (i % 2)
 		{
 	//		push_line(r, t.p0, t.p0 + t.n0 * 0.1f, nc0);
@@ -752,6 +759,7 @@ void push_mesh(Render_Context *r, Mesh *mesh, v3 position, v3 scale = V3(1, 1, 1
 		//	push_line(r, t.p1, t.p2, color);
 		}
     }
+    push_box_outline(r, (min_box + max_box) * 0.5f, (max_box - min_box) * 0.5f);
 }
 
 void push_2d_text(Render_Context *r, String s, v2 offset, float scale = 1, v4 color = V4(1, 1, 1, 1))

@@ -43,6 +43,7 @@ typedef struct
 
 internal float max(float a, float b)
 {
+   // return fmax(a, b);
 	return a > b ? a : b;
 }
 
@@ -175,6 +176,16 @@ internal v3 cross(v3 a, v3 b)
         a.z * b.x - a.x * b.z,
         a.x * b.y - a.y * b.x
     };
+}
+
+internal v3 min(v3 a, v3 b)
+{
+    return (V3(min(a.x, b.x), min(a.y, b.y), min(a.z, b.z)));
+}
+
+internal v3 max(v3 a, v3 b)
+{
+    return (V3(max(a.x, b.x), max(a.y, b.y), max(a.z, b.z)));
 }
 
 internal v2 V2(float x, float y)
