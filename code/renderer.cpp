@@ -9,34 +9,26 @@
 #include "renderer.h"
 #include "game.h"
 
-Render_Context new_render_context(Game *game, Texture framebuffer, float near_clip_plane, float far_clip_plane,
+Render_Context new_render_context(Arena *arena, Game *game, Texture framebuffer, float near_clip_plane, float far_clip_plane,
 		float fov, int max_triangle_count)
 {
 	Render_Context r {};
 
+	r.arena = arena;
 	r.game = game;
 
 	r.buffer = framebuffer;
 	r.buffer_aa.width = r.buffer.width * SAMPLES_PER_PIXEL;
 	r.buffer_aa.pitch = r.buffer_aa.width;
 	r.buffer_aa.height = r.buffer.height;
-	r.buffer_aa.pixels = (uint32_t *)malloc(r.buffer_aa.width * r.buffer_aa.height * sizeof(uint32_t) + 16);
+	r.buffer_aa.pixels = push_array(r.arena, uint32_t, r.buffer_aa.width * r.buffer_aa.height, arena_align(32));
 
-	if (((uintptr_t)r.buffer_aa.pixels & 31))
-		r.buffer_aa.pixels = (uint32_t *)((char *)r.buffer_aa.pixels + 16);
-
-	r.zbuffer = (float *)malloc(r.buffer_aa.width * r.buffer_aa.height * sizeof(*r.zbuffer) + 16);
-
-	if (((uintptr_t)r.zbuffer & 31))
-		r.zbuffer = (float *)((char *)r.zbuffer + 16);
-
-	assert(((uintptr_t)r.buffer_aa.pixels & 31) == 0);
-	assert(((uintptr_t)r.zbuffer & 31) == 0);
+	r.zbuffer = push_array(r.arena, float, r.buffer_aa.width * r.buffer_aa.height, arena_align(32));
 
 	r.fov = fov;
 	r.near_clip_plane = near_clip_plane;
 	r.far_clip_plane = far_clip_plane;
-	r.triangles = (Triangle *)malloc(max_triangle_count * sizeof(*r.triangles));
+	r.triangles = push_array(r.arena, Triangle, max_triangle_count);
 
 	assert(r.buffer_aa.pixels && r.triangles);
 
@@ -48,7 +40,7 @@ Render_Context new_render_context(Game *game, Texture framebuffer, float near_cl
 	r.left = -r.right;
 
 	for (int i = 0; i < TILES_COUNT; i++)
-		r.triangles_per_tile[i] = (int *)malloc(max_triangle_count * sizeof(*r.triangles_per_tile));
+		r.triangles_per_tile[i] = push_array(r.arena, int, max_triangle_count);
 
 	r.clip_planes[0] = {{0, 0, -1}, -r.near_clip_plane}; // front
 	r.clip_planes[1] = {cross(V3(r.left, r.bottom, -r.near_clip_plane),
@@ -759,17 +751,19 @@ void push_mesh(Render_Context *r, Mesh *mesh, v3 position, v3 scale = V3(1, 1, 1
 		//	push_line(r, t.p1, t.p2, color);
 		}
     }
-    push_box_outline(r, (min_box + max_box) * 0.5f, (max_box - min_box) * 0.5f);
+ //   push_box_outline(r, (min_box + max_box) * 0.5f, (max_box - min_box) * 0.5f);
 }
 
 void push_2d_text(Render_Context *r, String s, v2 offset, float scale = 1, v4 color = V4(1, 1, 1, 1))
 {
 	assert(r->text_count < ARRAY_LENGTH(r->text));
-	r->text[r->text_count++] = {.string = string_dup(s), .offset = offset, .scale = scale, .color = color};
+	r->text[r->text_count++] = {.string = string_dup(r->arena, s), .offset = offset, .scale = scale, .color = color};
 }
 
 void render_tile(Render_Context *r, int tile_index)
 {
+	TIMED_FUNCTION();
+
 	v2 clip_min, clip_max;
 
 	get_tile_clip_bounds(r, tile_index, clip_min, clip_max);
@@ -781,9 +775,12 @@ void render_tile(Render_Context *r, int tile_index)
 
 	v3 light_p = world_to_camera(r, r->light_p);
 
+	int render_zbuffer = r->game->render_zbuffer;
 
 	for (int j = 0; j < r->triangles_per_tile_count[tile_index]; j++)
 	{
+		TIMED_BLOCK("render triangle");
+
 		Triangle *t = &r->triangles[r->triangles_per_tile[tile_index][j]];
 
         v3 tp0 = t->p0;
@@ -895,6 +892,20 @@ void render_tile(Render_Context *r, int tile_index)
                 if (_mm256_testz_si256(mask.v, mask.v))
                     continue ;
 
+				if (render_zbuffer && !t->no_lighthing)
+				{
+
+					lane_f32 c =  (z / LaneF32(r->far_clip_plane));
+
+					c = min(c, LaneF32(1)) * 255;
+					
+
+               		lane_u32 color32 = (LaneU32(c) << 24) | (LaneU32(c) << 16) | (LaneU32(c) << 8);
+
+            		_mm256_maskstore_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask.v, color32.v);
+               		_mm256_maskstore_ps((r->zbuffer + buffer_index), mask.v, z.v);
+					continue ;
+				}
 				w0 *= z * p0.z;
 				w1 *= z * p1.z;
 				w2 *= z * p2.z;

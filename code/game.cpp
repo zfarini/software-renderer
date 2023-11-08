@@ -6,6 +6,51 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
 
+
+#define STB_IMAGE_IMPLEMENTATION 
+#define STBI_ONLY_PNG
+#include "stb_image.h"
+
+Texture load_texture(Arena *arena, const char *filename)
+{
+    Texture tex;
+
+    int w, h, n;
+    unsigned char *pixels = stbi_load(filename, &w, &h, &n, 4);
+    if (!pixels)
+    {
+        printf("failed to load %s\n", filename);
+        assert(0);
+    }
+    assert(n == 3 || n == 4);
+    tex.width = w;
+    tex.height = h;
+	tex.pitch = w;
+	tex.pixels = push_array(arena, uint32_t, w * h);
+    //pixels are 0xRRGGBBAA
+    uint32_t *pixel = (uint32_t *)pixels;
+    for (int y = 0; y < tex.height; y++)
+    {
+        for (int x = 0; x < tex.width; x++)
+        {
+            uint32_t p = *pixel;
+            uint32_t r = (p >> 0)  & 0xFF;
+            uint32_t g = (p >> 8)  & 0xFF;
+            uint32_t b = (p >> 16) & 0xFF;
+            uint32_t a = (p >> 24) & 0xFF;
+
+			a = 255; // ??
+			uint32_t *dest = tex.pixels + (h - y - 1) * tex.width + x;
+			*dest = (r << 24) | (g << 16) | (b << 8) | a;
+
+            pixel++;
+        }
+    }
+    printf("loaded %s %d %d\n", filename, w, h);
+    stbi_image_free(pixels);
+    return tex;
+}
+
 void read_vertex(char **line, int *f)
 {
     int i = 0;
@@ -19,23 +64,24 @@ void read_vertex(char **line, int *f)
 	*line = *line + 1;	
 }
 
-Mesh load_mesh(const char *filename, Texture *texture = 0)
+Mesh load_mesh(Arena *arena, const char *filename, Texture *texture = 0)
 
 {
-	char *file = read_entire_file(filename);
-
 	Mesh mesh = {};
 
 	int max_vertices_count = 8192 * 128;
-	int max_triangle_count = 8192 * 128;
-
-    v2 *uvs = (v2 *)malloc(max_vertices_count * sizeof(*uvs));
-    v3 *vns = (v3 *)malloc(max_vertices_count * sizeof(*uvs));
-
-	v3 *vertices = (v3 *)malloc(max_vertices_count * sizeof(v3));
+	int max_triangle_count = max_vertices_count;
     int vertex_count = 0;
 
-	mesh.triangles = (Triangle *)malloc(max_triangle_count * sizeof(*mesh.triangles));
+	mesh.triangles = push_array(arena, Triangle, max_triangle_count);
+
+
+	size_t arena_temp_begin = arena->used;
+
+	char *file = read_entire_file(arena, filename);
+	v2 *uvs = push_array(arena, v2, max_vertices_count);
+	v3 *vns = push_array(arena, v3, max_vertices_count);
+	v3 *vertices = push_array(arena, v3, max_vertices_count);
 
     float max_abs = FLT_MIN;
 
@@ -144,9 +190,8 @@ Mesh load_mesh(const char *filename, Texture *texture = 0)
         mesh.triangles[i].p1 *= s;
         mesh.triangles[i].p2 *= s;
     }
-    free(vertices);
-    free(vns);
-    free(uvs);
+	arena->used = arena_temp_begin;
+	arena->used -= (max_triangle_count - mesh.triangle_count) * sizeof(Triangle);
 	return mesh;
 }
 
@@ -176,6 +221,7 @@ extern "C" int game_thread_work(void *data)
 	return 0;
 }
 
+#if 0
 void load_animation(const char *dir, Mesh *out, int frame_count, Texture *texture)
 {
     for (int i = 0; i < frame_count; i++)
@@ -194,37 +240,43 @@ void load_animation(const char *dir, Mesh *out, int frame_count, Texture *textur
         out[i] = load_mesh(filename, texture);
     }
 }
+#endif
 
-extern "C" void game_update_and_render(Game *game)
+extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, GameInput *game_input)
 {
 	if (!game->is_initialized)
     {
-        game->starwars_tex = load_texture("data/starwars.png");
-		game->grass_tex = load_texture("data/grass.png");
-		game->grass_top_tex = load_texture("data/grass_top.png");
-		game->ground_tex = load_texture("data/ground.png");
-		game->gun_tex = load_texture("data/gun_tex.png");
+		Arena global_arena;
 
-     //   load_animation("data/starwars_animation", game->starwars_animation, 116, &game->starwars_tex);
+		init_arena(&global_arena, game_memory->permanent_storage, game_memory->permanent_storage_size);
+
+		init_arena(&game->scratch_arena, &global_arena, MEGABYTES(64));
+		init_arena(&game->permanent_arena, &global_arena, MEGABYTES(64));
+		init_arena(&game->assets_arena, &global_arena, MEGABYTES(256));
+		init_arena(&game->renderer_arena, &global_arena, GIGABYTES(1));
+
+        game->starwars_tex	= load_texture(&game->assets_arena, "data/starwars.png");
+		game->grass_tex		= load_texture(&game->assets_arena, "data/grass.png");
+		game->grass_top_tex = load_texture(&game->assets_arena, "data/grass_top.png");
+		game->ground_tex	= load_texture(&game->assets_arena, "data/ground.png");
+		game->gun_tex		= load_texture(&game->assets_arena, "data/gun_tex.png");
 
 		{
 			Texture *t = &game->checkerboard_tex;
 
 			t->width = t->height = t->pitch = 2;
-			t->pixels = (uint32_t *)calloc(t->width * t->height, sizeof(uint32_t));
+			t->pixels = push_array(&game->permanent_arena, uint32_t, t->width * t->height);
 
 			for (int y = 0; y < t->height; y++)
 			{
 				for (int x = 0; x <t->width; x++)
-					t->pixels[y * t->width + x] = (x + y)% 2 ? 0xffffffff : 0xff;
+					t->pixels[y * t->width + x] = (x + y)% 2 ? 0xffffffff : 0x222222ff;
 			}
-//			t->pixels[0] = t->pixels[3] = 0xffffffff;
-//			t->pixels[1] = t->pixels[2] = 0xff;
 		}
 
-        game->starwars_mesh = load_mesh("data/starwars.obj",  &game->starwars_tex);
-		game->gun_mesh = load_mesh("data/gun.obj", &game->gun_tex);
-        game->cow_mesh = load_mesh("data/cow.obj", &game->checkerboard_tex);
+        game->starwars_mesh = load_mesh(&game->assets_arena, "data/starwars.obj",  &game->starwars_tex);
+		game->gun_mesh = load_mesh(&game->assets_arena, "data/gun.obj", &game->gun_tex);
+        game->cow_mesh = load_mesh(&game->assets_arena, "data/cow.obj", &game->checkerboard_tex);
 
 		for (int i = 0; i < game->cow_mesh.triangle_count; i++)
 		{
@@ -233,32 +285,26 @@ extern "C" void game_update_and_render(Game *game)
 			game->cow_mesh.triangles[i].uv2 *= 20;
 		}
 
-        game->monkey_mesh = load_mesh("data/monkey.obj");
-		game->african_head_tex = load_texture("data/african_head.png");
-		game->african_head_mesh = load_mesh("data/african_head.obj", &game->african_head_tex);
+        game->monkey_mesh = load_mesh(&game->assets_arena, "data/monkey.obj");
+		game->african_head_tex = load_texture(&game->assets_arena, "data/african_head.png");
+		game->african_head_mesh = load_mesh(&game->assets_arena, "data/african_head.obj", &game->african_head_tex);
 
-       game->camera_p = (v3){0, 0, 0};
-
-		srand(time(0));
-
-		for (int i = 0; i < CUBES_HEIGHT; i++)
-		{
-			for (int j = 0; j < CUBES_WIDTH; j++)
-				game->cubes_height[i][j] = (float)rand() / (float)RAND_MAX;
-		}
+		game->camera_p = (v3){0, 0, 0};
 
 
-		game->render_context = (Render_Context *)malloc(sizeof(*game->render_context));
-		*game->render_context = new_render_context(game, game->framebuffer, 0.05f, 1000, 60, 10000000);
+
+
+		game->render_context = push_struct(&game->renderer_arena, Render_Context);
+		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 0.05f, 100, 60, 500000);
 
 		{
 			stbtt_fontinfo info;
     	    long size;
-    	    unsigned char *font_contents = (unsigned char *)read_entire_file("data/liberation-mono.ttf");
+    	    unsigned char *font_contents = (unsigned char *)read_entire_file(&game->scratch_arena, "data/liberation-mono.ttf");
 
     	    if (!stbtt_InitFont(&info, font_contents, 0))
     	        assert(0);
-    	    int font_line_height = 1024;
+    	    int font_line_height = 256;
 
     	    float scale = stbtt_ScaleForPixelHeight(&info, font_line_height);
 
@@ -272,7 +318,6 @@ extern "C" void game_update_and_render(Game *game)
 			int chars_last = 127;
 			int chars_count = chars_last - chars_first;
 
-			Texture text_texture;
 
     	  	int ax;
     	    int lsb;
@@ -281,9 +326,11 @@ extern "C" void game_update_and_render(Game *game)
     	    stbtt_GetCodepointHMetrics(&info, 'A', &ax, &lsb);
 			int font_advance_x = ceilf(ax * scale);
 
+			Texture text_texture;
+
 			text_texture.width = text_texture.pitch = font_advance_x * (chars_last - chars_first);
 			text_texture.height = font_line_height;
-			text_texture.pixels = (uint32_t *)malloc(text_texture.width * text_texture.height * sizeof(uint32_t));
+			text_texture.pixels = push_array(&game->renderer_arena, uint32_t, text_texture.width * text_texture.height);
 			game->render_context->text_texture = text_texture;
 			game->render_context->first_char = chars_first;
 			game->render_context->last_char = chars_last;
@@ -295,7 +342,7 @@ extern "C" void game_update_and_render(Game *game)
             game->text_dx = (1.f / 80);
             game->text_dy = game->text_dx * ((float)font_line_height / font_advance_x);
 
-			uint8_t *bitmap = (uint8_t *)malloc(font_line_height * font_advance_x);
+			uint8_t *bitmap = push_array(&game->scratch_arena, uint8_t, font_line_height * font_advance_x);
 
     	    for (int c = chars_first; c < chars_last; c++)
     	    {
@@ -334,21 +381,52 @@ extern "C" void game_update_and_render(Game *game)
 					}
 				}
     	    }
-    	    free(font_contents);
-			free(bitmap);
+			clear_arena(&game->scratch_arena);
 		}
-
-
-
-
 		game->is_initialized = 1;
     }
 	struct timespec time_start, time_end;
 	clock_gettime(CLOCK_MONOTONIC, &time_start);
 
+
+	if (game_input->buttons[SDL_SCANCODE_F1].is_down && !game_input->buttons[SDL_SCANCODE_F1].was_down)
+		game->render_zbuffer = !game->render_zbuffer;
 	// update camera
 	{
-		game->camera_p  += game->camera_dp * DT;
+		if (game_input->mouse_buttons[MouseButton_Left].is_down ||
+			game_input->mouse_relative_mode)
+		{
+			int sign = game_input->mouse_relative_mode ? -1 : 1;
+			game->camera_rotation.y += sign * game_input->mouse_rel_dp.x * (PI * DT * 50);
+			game->camera_rotation.x += -sign * game_input->mouse_rel_dp.y * (PI * DT * 50);
+		}
+
+		game->camera_dp = V3(0, 0, 0);
+
+		if (game_input->buttons[SDL_SCANCODE_ESCAPE].is_down)
+		    game->should_quit = 1;
+		if (game_input->buttons[SDL_SCANCODE_W].is_down)
+			game->camera_dp += game->camera_z;
+
+		if (game_input->buttons[SDL_SCANCODE_A].is_down)
+			game->camera_dp += -game->camera_x;
+		if (game_input->buttons[SDL_SCANCODE_S].is_down)
+			game->camera_dp += -game->camera_z;
+		if (game_input->buttons[SDL_SCANCODE_D].is_down)
+			game->camera_dp += game->camera_x;
+		if (game_input->buttons[SDL_SCANCODE_Q].is_down)
+			game->camera_dp += game->camera_y;
+		if (game_input->buttons[SDL_SCANCODE_E].is_down)
+		   game->camera_dp += -game->camera_y;
+
+		if (game_input->buttons[SDL_SCANCODE_R].is_down)
+		    game->camera_rotation.z += 0.01f * PI;
+		if (game_input->buttons[SDL_SCANCODE_F].is_down)
+		    game->camera_rotation.z -= 0.01f * PI;
+
+		game->camera_dp = noz(game->camera_dp) * 8;
+		game->camera_p += game->camera_dp * DT;
+
 		game->camera_inv_rotation_mat = x_rotation(-game->camera_rotation.x) *
 						(y_rotation(-game->camera_rotation.y) * z_rotation(-game->camera_rotation.z));
 		game->camera_rotation_mat = z_rotation(game->camera_rotation.z) *
@@ -365,54 +443,6 @@ extern "C" void game_update_and_render(Game *game)
 	Render_Context *r = game->render_context;
 
 	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.2, 0.2, 0.2), light_p);
-
-
-#if 0
-	{
-		int w = 20;
-		int h = 20;
-		int d = 10;
-
-		float space = (sinf(game->time) + 1) * 0.5f * 1;
-
-		float a = game->time;
-		float b = sinf(game->time * 2);
-		float c = cosf(game->time * 1.5);
-
-		for (int x = 0; x < w; x++)
-		{
-			for (int z = 0; z < h; z++)
-			{
-				for (int y = 0; y < d; y++)
-				{
-					if (x && y && z && (x != w - 1) && (z != h - 1) && (y != d - 1))
-						continue ;
-					if (y == d - 1)
-						continue ;
-					if (z == 0 && x >= 3 && x <= 6 && y <= 4)
-						continue ;
-					
-					space = 0.1f;
-					v3 p = V3(0, 2, -1) + V3(x, y , -z) + V3(space, space, -space) * V3(x, y, z);
-					v3 radius = V3(0.5, 0.5, 0.5);
-					v4 color = V4(1, 1, 1, 0.2);
-
-					m3x3 rotation = z_rotation(a) * x_rotation(b) * y_rotation(c);
-
-					v3 u = V3(1, 0, 0);
-					v3 v = V3(0, 1, 0);
-					v3 w = V3(0, 0, -1);
-					
-					//u = rotation * u;
-					//v = rotation * v;
-					//w = rotation * w;
-
-					push_cube(r, p, u, v, w, radius, color, 0, 0);
-				}
-			}
-		}
-	}
-#endif 
 
 	float d = 10;
 	{
@@ -445,79 +475,14 @@ extern "C" void game_update_and_render(Game *game)
 		push_triangle(r, &t);
 	}
 
-
-
-#if 0
-
-    {
-        v3 p = V3(0, 0, -2);
-        v3 dir = noz(V3(0, 0, 1));
-
-        v3 d = noz(V3(0, -1, 0));
-
-        float spine_length = 0.5f;
-        float leg_length = 0.35;
-        float hand_length = 0.3;
-        float hand_offset = spine_length * 0.2f;
-
-        v4 color = V4(1, 0, 0, 1);
-
-        // spine
-        push_line(r, p, p + spine_length * d, V4(1, 0, 0, 1));
-
-        v3 xaxis = d;
-        v3 yaxis = noz(cross(dir, d));
-        v3 hand_p = p + d * hand_offset;
-
-        float left_hand_angle = -PI / 6;
-        v3 left_hand_p = hand_p + (cos(left_hand_angle) * xaxis +  sin(left_hand_angle) * yaxis) *  hand_length;
-        push_line(r, hand_p, left_hand_p, V4(0, 1, 0, 1));
-
-        float right_hand_angle = PI / 6;
-        v3 right_hand_p = hand_p + (cos(right_hand_angle) * xaxis +  sin(right_hand_angle) * yaxis) *  hand_length;
-        push_line(r, hand_p, right_hand_p, V4(1, 1, 0, 1));
-
-        v3 leg_p = p + d * spine_length;
-
-        float left_leg_angle = -PI / 6;
-        v3 left_leg_p = leg_p + (cos(left_leg_angle) * xaxis +  sin(left_leg_angle) * yaxis) *  leg_length;
-        push_line(r, leg_p, left_leg_p, V4(0, 1, 1, 1));
-
-        float right_leg_angle = PI / 6;
-        v3 right_leg_p = leg_p + (cos(right_leg_angle) * xaxis +  sin(right_leg_angle) * yaxis) *  leg_length;
-        push_line(r, leg_p, right_leg_p, V4(1, 0, 1, 1));
-
-
-
-        float head_radius = 0.1f;
-        v3 head_p =  p - d * head_radius;
-
-        push_cube(r, head_p, xaxis, yaxis, dir, V3(head_radius), V4(1, 1, 1, 1));
-
-        // left hand
-        
-    }
-#endif
-#if 1
 	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.8, 0.8, 0.8, 1));
     push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
-	//for (int z = 0; z < 5; z++)
-	//{
-	//	for (int x = 0; x < 5; x++)
-   	// 		push_mesh(r, &game->starwars_animation[(game->frame / 2) % 116], V3(x, -1, -5 - z), V3(2, 2, 2));
-	//}
- 
     push_mesh(r, &game->starwars_mesh,V3(0, -1, -5), V3(2, 2, 2));
     push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5));
 	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
 
-#endif
-
-
     push_box_outline(r, V3(0, 4, 0), V3(1, 1, 1));
 
-    //game->text_dy;
-    //game->text_dx;
 
     float y = 0;
 	{
@@ -534,7 +499,7 @@ extern "C" void game_update_and_render(Game *game)
 
 		    char s[512];
             uint64_t c = d->cycle_count - d->childs_cycle_count;
-		    snprintf(s, sizeof(s), "%s:%d: %s: %llu %llu (%d) avg:%llu", d->filename, d->line, d->function_name, c, d->childs_cycle_count, d->calls_count, (uint64_t)ceil((double)c / d->calls_count));
+		    snprintf(s, sizeof(s), "%s:%d: %s: %lu %lu (%d) avg:%lu", d->filename, d->line, d->block_name, c, d->childs_cycle_count, d->calls_count, (uint64_t)ceil((double)c / d->calls_count));
 		    push_2d_text(r, cstring(s), V2(0, y), 1);
             y += game->text_dy;
         }

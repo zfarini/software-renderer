@@ -21,7 +21,7 @@ void swap(v2 &a, v2 &b)
 	swap(a.y, b.y);
 }
 
-char *read_entire_file(const char *filename)
+char *read_entire_file(Arena *arena, const char *filename)
 {
     FILE *f = fopen(filename, "rb");
     if (!f)
@@ -33,7 +33,7 @@ char *read_entire_file(const char *filename)
     fseek(f, 0, SEEK_END);
     long length = ftell(f);
     fseek(f, 0, SEEK_SET);
-    char *result = (char *)malloc(length + 1);
+	char *result = push_array(arena, char, length + 1);
     assert(result);
     fread(result, 1, length, f);
     result[length] = 0;
@@ -52,14 +52,13 @@ String cstring(const char *s)
 	};
 }
 
-String string_dup(String s)
+String string_dup(Arena *arena, String s)
 {
 	String res;
 
 	res.len = s.len;
-	res.data = (char *)malloc(s.len + 1);
+	res.data = push_array(arena, char, s.len + 1);
 	res.data[res.len] = 0;
 	memcpy(res.data, s.data, s.len);
 	return res;
 }
-

@@ -15,6 +15,10 @@
 #include <inttypes.h>
 
 
+typedef int b32;
+
+#include "arena.h"
+
 #define DT (1.f / 60)
 #define PI 3.1415926535897932385
 #define DEG_TO_RAD (PI / 180.0)
@@ -22,8 +26,8 @@
 
 #include "math.h"
 
-#define THREADS 1
-#define CORE_COUNT (4)
+#define THREADS 0
+#define CORE_COUNT (8)
 #define CUBES_WIDTH 1
 #define CUBES_HEIGHT 1
 
@@ -32,6 +36,10 @@ typedef struct ThreadWork ThreadWork;
 #define THREAD_WORK_FUNC(func) void *func(ThreadWork *work)
 
 typedef THREAD_WORK_FUNC(ThreadWorkCallbackFn);
+
+#define KILOBYTES(x) (x * 1024)
+#define MEGABYTES(x) (KILOBYTES(x) * 1024ULL)
+#define GIGABYTES(x) (MEGABYTES(x) * 1024ULL)
 
 struct String
 {
@@ -83,6 +91,43 @@ typedef struct
 
 
 
+struct GameMemory
+{
+	void *permanent_storage;
+	size_t	permanent_storage_size;
+	int	is_initialized;
+};
+
+struct GameButton
+{
+	int is_down;
+	int was_down;
+};
+
+enum MouseButton
+{
+	MouseButton_Left,
+	MouseButton_Middle,
+	MouseButton_Right,
+	MouseButton_Count
+};
+
+struct GameInput
+{
+	float	dt;
+
+	GameButton mouse_buttons[MouseButton_Count];
+
+	GameButton buttons[512];
+
+	v2 prev_mouse_p;
+	v2 mouse_p;
+	v2 mouse_rel_dp;
+
+	b32 mouse_relative_mode;
+
+	float mouse_scroll;
+};
 
 struct Render_Context;
 
@@ -130,8 +175,6 @@ typedef struct
 
 	int thread_kill_yourself;
 
-	int is_mouse_left_pressed;
-
 	Render_Context *render_context;
 
     float text_dx, text_dy;
@@ -139,6 +182,15 @@ typedef struct
 	volatile int next_thread_index;
 	volatile int next_tile_index;
     volatile int tiles_finished;
+
+
+	Arena frame_arena;
+	Arena permanent_arena;
+	Arena assets_arena;
+	Arena renderer_arena;
+	Arena scratch_arena;
+
+	int render_zbuffer;
 } Game;
 
 
@@ -148,15 +200,16 @@ typedef int GameThreadWorkFn(void *);
 
 #include "renderer.h"
 
-Texture load_texture(const char *filename);
+Texture load_texture(Arena *arena, const char *filename);
 
 struct TimedBlock;
 
 struct TimedBlockData
 {
     int line;
-    const char *function_name;
-    const char *filename;
+	const char	*block_name;
+    const char	*function_name;
+    const char	*filename;
     uint64_t cycle_count;
     uint64_t childs_cycle_count;
     int calls_count;
@@ -170,15 +223,18 @@ TimedBlock *timed_blocks_opened[64000];
 int timed_blocks_count;
 int timed_blocks_opened_count;
 
+// TODO: display like average over last 120 frames
+//
 struct TimedBlock
 {
     TimedBlockData data;
 
-    TimedBlock(int line, const char *function_name, const char *filename)
+    TimedBlock(const char *block_name, int line, const char *function_name, const char *filename)
     {
         data.line = line;
         data.function_name = function_name;
         data.filename = filename;
+		data.block_name = block_name;
         timed_blocks_opened[timed_blocks_opened_count++] = this;
         data.cycle_count = __rdtsc();
         data.childs_cycle_count = 0;
@@ -195,7 +251,7 @@ struct TimedBlock
         timed_blocks_opened_count--;
         for (int i = 0; i < timed_blocks_count; i++)
         {
-            if (data.function_name == timed_blocks[i].function_name)
+            if (data.block_name == timed_blocks[i].block_name)
             {
                 timed_blocks[i].calls_count++;
                 timed_blocks[i].cycle_count += data.cycle_count;
@@ -203,14 +259,13 @@ struct TimedBlock
                 return ;
             }
         }
-
-
-
         timed_blocks[timed_blocks_count++] = data;
     }
 };
 
 
-#define TIMED_FUNCTION() TimedBlock __FUNCTION__##timed_block_(__LINE__, __FUNCTION__, __FILE__)
+#define TIMED_BLOCK(name) TimedBlock _timed_block_##__COUNTER__(name, __LINE__, __FUNCTION__, __FILE__)
+
+#define TIMED_FUNCTION() TIMED_BLOCK(__FUNCTION__)
 
 #endif

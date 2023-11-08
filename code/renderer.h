@@ -12,7 +12,6 @@
 
 #define SAMPLES_PER_PIXEL_DIM (2)
 
-
 #define SAMPLES_PER_PIXEL (SAMPLES_PER_PIXEL_DIM * SAMPLES_PER_PIXEL_DIM)
 #define BILINEAR_FILTERING 0
 
@@ -77,6 +76,7 @@ struct Render_Context
 	
 	Render_Text text[8192];
 	int text_count;
+	Arena *arena;
 };
 
 //void begin_render(Render_Context *r);
