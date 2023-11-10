@@ -181,7 +181,7 @@ typedef struct
     float text_dx, text_dy;
 
 	volatile int next_thread_index;
-	volatile uint64_t next_tile_index;
+	volatile int next_tile_index;
     volatile int tiles_finished;
 
 

@@ -204,16 +204,18 @@ extern "C" void *game_thread_work(void *data)
 
 	int id = __sync_add_and_fetch(&game->next_thread_index, 1);
 
-	//printf("lanched thread %d\n", index);
 	while (!game->thread_kill_yourself)
 	{
-		// TODO: this is u64 for now because if the game is paused
-		// it will keep adding up until overflow
-		uint64_t tile = __sync_fetch_and_add(&game->next_tile_index, 1);
+		int tile = __sync_fetch_and_add(&game->next_tile_index, 1);
+
 
 		if (tile >= TILES_COUNT)
 		{
-			usleep(100); // TODO: better sleep
+			// TODO: try to avoid this
+			//
+			// NOTE: this is done to avoid overflowing the tile index when we 
+			// are pausing
+			__sync_bool_compare_and_swap(&game->next_tile_index, tile, TILES_COUNT);
 			continue;
 		}
 		render_tile(game->render_context, tile, id);
