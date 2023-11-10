@@ -26,8 +26,9 @@ typedef int b32;
 
 #include "math.h"
 
-#define THREADS 0
+#define THREADS 1
 #define CORE_COUNT (8)
+#define THREAD_COUNT CORE_COUNT
 #define CUBES_WIDTH 1
 #define CUBES_HEIGHT 1
 
@@ -180,7 +181,7 @@ typedef struct
     float text_dx, text_dy;
 
 	volatile int next_thread_index;
-	volatile int next_tile_index;
+	volatile uint64_t next_tile_index;
     volatile int tiles_finished;
 
 
@@ -191,11 +192,12 @@ typedef struct
 	Arena scratch_arena;
 
 	int render_zbuffer;
+	int pause_game;
 } Game;
 
 
 typedef void GameUpdateAndRenderFn(Game *game);
-typedef int GameThreadWorkFn(void *);
+typedef void *GameThreadWorkFn(void *);
 
 
 #include "renderer.h"
@@ -206,66 +208,95 @@ struct TimedBlock;
 
 struct TimedBlockData
 {
-    int line;
 	const char	*block_name;
     const char	*function_name;
     const char	*filename;
     uint64_t cycle_count;
     uint64_t childs_cycle_count;
     int calls_count;
+    int line;
+	uint64_t	last_timer;
 };
 
-// TODO: I guess these stuff will be per thread
-TimedBlockData timed_blocks[128000];
+
+// TODO: declare these last thing in the compilation unit and use __COUNTER as length
+#define MAX_BLOCK_COUNT 256
+
+TimedBlockData	timed_blocks1[THREAD_COUNT * MAX_BLOCK_COUNT];
+TimedBlockData	timed_blocks2[THREAD_COUNT * MAX_BLOCK_COUNT];
 
 
-TimedBlock *timed_blocks_opened[64000];
-int timed_blocks_count;
-int timed_blocks_opened_count;
+TimedBlockData	*timed_blocks = (TimedBlockData *)timed_blocks1;
+
+int timed_blocks_stack[THREAD_COUNT][MAX_BLOCK_COUNT];
+int	timed_blocks_stack_count[THREAD_COUNT];
+
+
+/*
+
+	b1
+		b2
+			b3
+
+
+*/
 
 // TODO: display like average over last 120 frames
 //
+//
 struct TimedBlock
 {
-    TimedBlockData data;
+	int bid;
+	int	tid;
 
-    TimedBlock(const char *block_name, int line, const char *function_name, const char *filename)
+    TimedBlock(const char *block_name, int line, const char *function_name, const char *filename, int block_id, int thread_id = 0)
     {
-        data.line = line;
-        data.function_name = function_name;
-        data.filename = filename;
-		data.block_name = block_name;
-        timed_blocks_opened[timed_blocks_opened_count++] = this;
-        data.cycle_count = __rdtsc();
-        data.childs_cycle_count = 0;
+		bid = block_id;
+		tid = thread_id;
+
+		TimedBlockData *d = &timed_blocks[tid * MAX_BLOCK_COUNT + bid];
+
+		d->line = line;
+		d->function_name = function_name;
+        d->filename = filename;
+		d->block_name = block_name;
+		d->last_timer = __rdtsc();
+		d->calls_count++;
+
+		timed_blocks_stack[tid][timed_blocks_stack_count[tid]++] = bid;
     }
 
     ~TimedBlock()
     {
-        data.cycle_count = __rdtsc() - data.cycle_count;
-        data.calls_count = 1;
+		TimedBlockData *d = &timed_blocks[tid * MAX_BLOCK_COUNT + bid];
 
-        if (timed_blocks_opened_count > 1)
-            timed_blocks_opened[timed_blocks_opened_count - 2]->data.childs_cycle_count += data.cycle_count;
+		uint64_t cycle_count = __rdtsc() - d->last_timer;
+		d->cycle_count += cycle_count;
 
-        timed_blocks_opened_count--;
-        for (int i = 0; i < timed_blocks_count; i++)
-        {
-            if (data.block_name == timed_blocks[i].block_name)
-            {
-                timed_blocks[i].calls_count++;
-                timed_blocks[i].cycle_count += data.cycle_count;
-                timed_blocks[i].childs_cycle_count += data.childs_cycle_count;
-                return ;
-            }
-        }
-        timed_blocks[timed_blocks_count++] = data;
+		timed_blocks_stack_count[tid]--;
+		if (timed_blocks_stack_count[tid])
+			timed_blocks[tid * MAX_BLOCK_COUNT
+				+ timed_blocks_stack[tid][timed_blocks_stack_count[tid] - 1]].childs_cycle_count += cycle_count;
     }
 };
 
 
-#define TIMED_BLOCK(name) TimedBlock _timed_block_##__COUNTER__(name, __LINE__, __FUNCTION__, __FILE__)
+#define PROFILING 1
 
+#if PROFILING
+#define TIMED_THREAD_BLOCK(name, tid) TimedBlock _timed_block_##__LINE__(name, __LINE__, __FUNCTION__, __FILE__, __COUNTER__,tid)
+#define TIMED_THREAD_FUNCTION(tid) TIMED_THREAD_BLOCK(__FUNCTION__, tid)
+
+#define TIMED_BLOCK(name) TIMED_THREAD_BLOCK(name, 0)
 #define TIMED_FUNCTION() TIMED_BLOCK(__FUNCTION__)
+
+#else
+#define TIMED_BLOCK(name)
+#define TIMED_FUNCTION()
+#define TIMED_THREAD_BLOCK(name, tid)
+#define TIMED_THREAD_FUNCTION(tid)
+#endif
+
+
 
 #endif

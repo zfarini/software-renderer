@@ -195,25 +195,28 @@ Mesh load_mesh(Arena *arena, const char *filename, Texture *texture = 0)
 	return mesh;
 }
 
+#include <unistd.h>
 
-extern "C" int game_thread_work(void *data)
+extern "C" void *game_thread_work(void *data)
 {
 #if 1
 	Game *game = (Game *)data;
 
-	int index = __sync_add_and_fetch(&game->next_thread_index, 1);
+	int id = __sync_add_and_fetch(&game->next_thread_index, 1);
 
-	printf("lanched thread %d\n", index);
+	//printf("lanched thread %d\n", index);
 	while (!game->thread_kill_yourself)
 	{
-		int tile = __sync_fetch_and_add(&game->next_tile_index, 1);
+		// TODO: this is u64 for now because if the game is paused
+		// it will keep adding up until overflow
+		uint64_t tile = __sync_fetch_and_add(&game->next_tile_index, 1);
 
 		if (tile >= TILES_COUNT)
 		{
-			//usleep(100); // TODO: better sleep
+			usleep(100); // TODO: better sleep
 			continue;
 		}
-		render_tile(game->render_context, tile);
+		render_tile(game->render_context, tile, id);
         __sync_fetch_and_add(&game->tiles_finished, 1);
 	}
 #endif
@@ -389,6 +392,11 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 	clock_gettime(CLOCK_MONOTONIC, &time_start);
 
 
+	if (game_input->buttons[SDL_SCANCODE_P].is_down && !game_input->buttons[SDL_SCANCODE_P].was_down)
+		game->pause_game = !game->pause_game;
+	//game->pause_game = 1;
+	if (game->pause_game)
+		return ;
 	if (game_input->buttons[SDL_SCANCODE_F1].is_down && !game_input->buttons[SDL_SCANCODE_F1].was_down)
 		game->render_zbuffer = !game->render_zbuffer;
 	// update camera
@@ -403,8 +411,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 		game->camera_dp = V3(0, 0, 0);
 
-		if (game_input->buttons[SDL_SCANCODE_ESCAPE].is_down)
-		    game->should_quit = 1;
+
 		if (game_input->buttons[SDL_SCANCODE_W].is_down)
 			game->camera_dp += game->camera_z;
 
@@ -492,21 +499,74 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		push_2d_text(r, cstring(s), V2(0, 0));
         y += game->text_dy;
 	}
-    {
-        for (int i = 0; i < timed_blocks_count; i++)
-        {
-            TimedBlockData *d = &timed_blocks[i];
 
-		    char s[512];
-            uint64_t c = d->cycle_count - d->childs_cycle_count;
-		    snprintf(s, sizeof(s), "%s:%d: %s: %lu %lu (%d) avg:%lu", d->filename, d->line, d->block_name, c, d->childs_cycle_count, d->calls_count, (uint64_t)ceil((double)c / d->calls_count));
-		    push_2d_text(r, cstring(s), V2(0, y), 1);
-            y += game->text_dy;
-        }
-        timed_blocks_count = 0;
-        timed_blocks_opened_count = 0;
-    }
+#if PROFILING
+	TimedBlockData *last_timed_blocks = timed_blocks == timed_blocks1 ? timed_blocks2 : timed_blocks1;
+
+	{
+		TIMED_BLOCK("profiling");
+
+		for (int bid = 0; bid < MAX_BLOCK_COUNT; bid++)
+		{
+	    	TimedBlockData *d = 0;
+			uint64_t total_cycle_count = 0;
+			int total_call_count = 0;
+			uint64_t total_childs_cycle_count = 0;
+			int thread_hit_count = 0;
+			int	thread_id;
+			for (int tid = 0; tid < THREAD_COUNT; tid++)
+			{
+				TimedBlockData *b = &last_timed_blocks[tid * MAX_BLOCK_COUNT + bid];
+				total_cycle_count += b->cycle_count;
+				total_call_count += b->calls_count;
+				total_childs_cycle_count += b->childs_cycle_count;
+				if (b->cycle_count)
+				{
+					d = b;
+					thread_hit_count++;
+					thread_id = tid;
+				}
+			}
+			if (!d)
+				continue ;
+
+			assert(total_cycle_count >= total_childs_cycle_count);
+			char s[512];
+			snprintf(s, sizeof(s), "%s:%d: %s: %lu %lu %dh",
+					d->filename, d->line, d->block_name,
+					total_cycle_count, 
+					total_cycle_count - total_childs_cycle_count, d->calls_count);
+			push_2d_text(r, cstring(s), V2(0, y), 1);
+	    	y += game->text_dy;
+			
+			float x = game->text_dx * 3;
+			if (thread_hit_count > 1)
+			{
+				for (int tid = 0; tid < THREAD_COUNT; tid++)
+				{
+	    			d = &last_timed_blocks[tid * MAX_BLOCK_COUNT + bid];
+	
+					if (!d->cycle_count)
+						continue ;
+					char s[512];
+					assert(d->cycle_count >= d->childs_cycle_count);
+					snprintf(s, sizeof(s), "%d: %lu %lu %dh", tid, d->cycle_count, 
+							d->cycle_count - d->childs_cycle_count,
+							d->calls_count);
+					push_2d_text(r, cstring(s), V2(x, y), 1);
+	    			y += game->text_dy;
+				}
+			}
+		}
+	}
+#endif
 	end_render(r);
+
+#if PROFILING
+	timed_blocks = last_timed_blocks;
+	memset(timed_blocks, 0, sizeof(timed_blocks1));
+	memset(timed_blocks_stack_count, 0, sizeof(timed_blocks_stack_count));
+#endif
 
 	clock_gettime(CLOCK_MONOTONIC, &time_end);
 	game->last_frame_time = (time_end.tv_sec - time_start.tv_sec) * 1000.0 + (time_end.tv_nsec - time_start.tv_nsec) / 1000000.0;

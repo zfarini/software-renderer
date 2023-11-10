@@ -20,6 +20,9 @@
 #include "game.cpp"
 #endif
 
+#include <pthread.h>
+
+
 time_t get_last_write_time(const char *filename)
 {
     time_t result = 0;
@@ -76,11 +79,11 @@ int  WinMain(
 int main(void)
 #endif
 {
-	int window_width = 1024;
-	int window_height = 1024;
+	int window_width = 512;
+	int window_height = 512;
 
-	int backbuffer_width = 1024;
-	int backbuffer_height = 1024;
+	int backbuffer_width = 512;
+	int backbuffer_height = 512;
 
 	assert(backbuffer_width  % TILES_PER_WIDTH == 0);
 	assert(backbuffer_height % TILES_PER_HEIGHT == 0);
@@ -144,9 +147,9 @@ int main(void)
 #endif
 
 #if THREADS
-	SDL_Thread *thread_ids[CORE_COUNT];
+	pthread_t thread_ids[CORE_COUNT];
 	for (int i = 1; i < CORE_COUNT; i++)
-		thread_ids[i] = SDL_CreateThread(game_thread_work, 0, game);
+		pthread_create(&thread_ids[i], 0, game_thread_work, game);
 #endif
 
 	while (!game->should_quit)
@@ -187,7 +190,6 @@ int main(void)
 #endif
 		game_input.mouse_rel_dp.x = 0;
 		game_input.mouse_rel_dp.y = 0;
-
 
 		SDL_Event ev;
 		while (SDL_PollEvent(&ev))
@@ -237,6 +239,9 @@ int main(void)
 		assert(game->framebuffer.pitch % 4 == 0);
 
 		game_update_and_render(game, &game_memory, &game_input);
+
+		if (game_input.buttons[SDL_SCANCODE_ESCAPE].is_down)
+		    game->should_quit = 1;
 
 		{
 			char s[128];

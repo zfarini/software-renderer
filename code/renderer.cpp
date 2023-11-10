@@ -175,21 +175,25 @@ void get_tile_clip_bounds(Render_Context *r, int index, v2 &min_clip, v2 &max_cl
 
 void push_triangle(Render_Context *r, Triangle *triangle)
 {
-    TIMED_FUNCTION();
+	TIMED_FUNCTION();
 
 	// TODO: this is somehow was bigger than 16 at some point idk if its a bug?
 	Triangle triangles[(1 << 5)];
 	int triangle_count = 1;
 	Triangle new_triangles[(1 << 5)];
 
-//	if (dot(cross(triangle->p1 - triangle->p0, triangle->p2 - triangle->p0), r->camera_p - triangle->p0) <= 0)
-//		return ;
-
 	triangles[0] = *triangle;
 	triangles[0].p0 = world_to_camera(r, triangle->p0);
 	triangles[0].p1 = world_to_camera(r, triangle->p1);
 	triangles[0].p2 = world_to_camera(r, triangle->p2);
 
+	{
+		v3 n = cross(triangles[0].p1 - triangles[0].p0, triangles[0].p2 - triangles[0].p0);
+
+		// TODO: why does this work
+		if (dot(n, triangles[0].p0) > 0)
+			return ;
+	}
 
 	for (int i = 0; i < ARRAY_LENGTH(r->clip_planes) && triangle_count; i++)
 	{
@@ -760,10 +764,9 @@ void push_2d_text(Render_Context *r, String s, v2 offset, float scale = 1, v4 co
 	r->text[r->text_count++] = {.string = string_dup(r->arena, s), .offset = offset, .scale = scale, .color = color};
 }
 
-void render_tile(Render_Context *r, int tile_index)
+void render_tile(Render_Context *r, int tile_index, int tid = 0)
 {
-	TIMED_FUNCTION();
-
+	TIMED_THREAD_FUNCTION(tid);
 	v2 clip_min, clip_max;
 
 	get_tile_clip_bounds(r, tile_index, clip_min, clip_max);
@@ -779,8 +782,6 @@ void render_tile(Render_Context *r, int tile_index)
 
 	for (int j = 0; j < r->triangles_per_tile_count[tile_index]; j++)
 	{
-		TIMED_BLOCK("render triangle");
-
 		Triangle *t = &r->triangles[r->triangles_per_tile[tile_index][j]];
 
         v3 tp0 = t->p0;
@@ -1068,7 +1069,12 @@ void render_tile(Render_Context *r, int tile_index)
                                 kd * LaneV3(diffuse) * light_diffuse +
                                 ks * LaneV3(specular) * light_specular);
 
+#if 0
+					c = 0.5f * (n + LaneV3(LaneF32(1)));
+#else
+
 					c *= texture_color * t->color.rgb;
+#endif
 #if 0
                     float fog_start = 20;
                     float fog_dist = 300;
@@ -1132,6 +1138,7 @@ void render_tile(Render_Context *r, int tile_index)
 void end_render(Render_Context *r)
 {
 	{ // TODO: disable z-buffer for these triangles?
+		TIMED_BLOCK("render text");
 		for (int i = 0; i < r->text_count; i++)
 		{
 			Render_Text *text = &r->text[i];
@@ -1213,7 +1220,8 @@ void end_render(Render_Context *r)
 	}
 
 	
-#if THREADS
+#if 1
+	__sync_synchronize();
     r->game->tiles_finished = 0;
 	__sync_lock_test_and_set(&r->game->next_tile_index, 0);
 
@@ -1228,7 +1236,7 @@ void end_render(Render_Context *r)
 	}
 	while (1)
 	{
-        if (r->game->tiles_finished == TILES_COUNT)
+        if (__sync_fetch_and_add(&r->game->tiles_finished, 0) == TILES_COUNT)
             break ;
 		//usleep(100);
 	}

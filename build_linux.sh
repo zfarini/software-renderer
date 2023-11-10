@@ -1,7 +1,8 @@
-FLAGS="-std=c++11 -O3  -mavx2"
+FLAGS="-std=c++11   -mavx2"
 
-#FLAGS="-std=c++11 -g3 -mavx2"
+FLAGS="$FLAGS -O3"
 
+#FLAGS="$FLAGS -g3"
 
 compiler="clang++"
 
