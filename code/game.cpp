@@ -560,7 +560,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 					stats[bid].data = record;
 			}
 		}
-		if (game->show_profiler)
+		if (game->show_profiler && game->frame)
 		{
 	//		push_2d_rect(r, V2(0, 0), V2(1, game->last_profiler_height), V4(0.5, 0.5, 0.5, 0.8));
 
@@ -568,7 +568,6 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			memcpy(_stats, stats, sizeof(_stats));
 			stats = _stats;
 
-			double total_cycle_count = 0;
 
 			v2 mouse_p = game_input->mouse_p;
 
@@ -578,6 +577,8 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			float frame_time_height = game->text_dy * 3;
 
 			record_rect_height = 0;
+
+
 
 			for (int i = 0; i < PROFILER_RECORD_FRAMES; i++)
 			{
@@ -615,25 +616,8 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			}
 			y += frame_time_height + game->text_dy;
 
-			for (int i = 0; i < MAX_BLOCK_COUNT; i++)
-			{
-				TimedBlockStat *stat = &stats[i];
+			double total_cycle_count = 0;
 
-				stat->childs_cycle_count /= record_count;
-				stat->cycle_count /= record_count;
-				stat->calls_count /= record_count;
-				stat->cycles_per_call /= record_count;
-				stat->cycle_count -= stat->childs_cycle_count;
-				total_cycle_count += stat->cycle_count;
-				for (int tid = 0; tid < THREAD_COUNT; tid++)
-				{
-					stat->t_childs_cycle_count[tid] /= record_count;
-					stat->t_cycle_count[tid] /= record_count;
-					stat->t_calls_count[tid] /= record_count;
-					stat->t_cycles_per_call[tid] /= record_count;
-					stat->t_cycle_count[tid] -= stat->t_childs_cycle_count[tid];
-				}
-			}
 			if (game->watch_profiler_frame != -1)
 			{
 				for (int bid = 0; bid < MAX_BLOCK_COUNT; bid++)
@@ -658,6 +642,29 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 						}
 						if (record->filename)
 							stats[bid].data = record;
+					}
+					total_cycle_count += stats[bid].cycle_count;
+				}
+			}
+			else
+			{
+				for (int i = 0; i < MAX_BLOCK_COUNT; i++)
+				{
+					TimedBlockStat *stat = &stats[i];
+
+					stat->childs_cycle_count /= record_count;
+					stat->cycle_count /= record_count;
+					stat->calls_count /= record_count;
+					stat->cycles_per_call /= record_count;
+					stat->cycle_count -= stat->childs_cycle_count;
+					total_cycle_count += stat->cycle_count;
+					for (int tid = 0; tid < THREAD_COUNT; tid++)
+					{
+						stat->t_childs_cycle_count[tid] /= record_count;
+						stat->t_cycle_count[tid] /= record_count;
+						stat->t_calls_count[tid] /= record_count;
+						stat->t_cycles_per_call[tid] /= record_count;
+						stat->t_cycle_count[tid] -= stat->t_childs_cycle_count[tid];
 					}
 				}
 			}
