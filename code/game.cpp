@@ -506,24 +506,20 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 	int record_count = min(PROFILER_RECORD_FRAMES, game->frame + 1);
 
     float y = 0;
-	if (game->frame)
-	{
-		char s[512];
 
-		snprintf(s, sizeof(s), "%.2fms %dfps %d records", game->last_frame_time,
-				(int)(1000.f / game->last_frame_time), record_count);
-		push_2d_text(r, cstring(s), V2(0, 0));
-        y += game->text_dy;
-	}
 
+    y += game->text_dy;
 	//push_2d_triangle(r, V2(0, 0), V2(1, 0), V2(1, 1));
 	//push_2d_rect_outline(r, V2(0, 0.8), V2(0.01, 0.8 + 0.04));
 #if PROFILING
 	TimedBlockData *last_timed_blocks = timed_blocks == timed_blocks1 ? timed_blocks2 : timed_blocks1;
 	{
+		game->last_frame_times[game->curr_profiler_frame] = game->last_frame_time;
+
 		TIMED_BLOCK("profiling");
 
 		TimedBlockStat *stats = game->timed_blocks_stats;
+
 
 		for (int bid = 0; bid < MAX_BLOCK_COUNT; bid++)
 		{
@@ -566,10 +562,105 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		}
 		if (game->show_profiler)
 		{
+	//		push_2d_rect(r, V2(0, 0), V2(1, game->last_profiler_height), V4(0.5, 0.5, 0.5, 0.8));
+
 			TimedBlockStat _stats[MAX_BLOCK_COUNT];
 			memcpy(_stats, stats, sizeof(_stats));
 			stats = _stats;
 
+			double total_cycle_count = 0;
+
+			v2 mouse_p = game_input->mouse_p;
+
+			game->watch_profiler_frame = -1;
+
+			float record_rect_height = game->text_dy;
+			float frame_time_height = game->text_dy * 3;
+
+			record_rect_height = 0;
+
+			for (int i = 0; i < PROFILER_RECORD_FRAMES; i++)
+			{
+				float dx = game->text_dx * 0.6;
+
+				dx = (1.f / PROFILER_RECORD_FRAMES);
+
+				float h = game->last_frame_times[i] / (1000.f / 60);
+
+				v4 color = V4(h, 0, 0, 1);
+
+				if (h > 1.5)
+					h = 1.5;
+				float max_y = y + frame_time_height;
+
+				v2 min = V2(i * dx, max_y - h * frame_time_height);
+				v2 max = V2((i + 1) * dx, max_y);
+
+				if (mouse_p.x >= min.x && mouse_p.x < max.x
+						&& mouse_p.y >= min.y && mouse_p.y < max.y
+						&& !game_input->mouse_relative_mode)
+				{
+					color = V4(0, 1, 1, 1);
+					if (game_input->mouse_buttons[MouseButton_Left].is_down
+							&& !game_input->mouse_buttons[MouseButton_Left].was_down)
+					{
+						game->pause_game = 1;
+						game->watch_profiler_frame = i;
+					}
+				}
+				else if (i == game->curr_profiler_frame)
+					color = V4(1, 1, 0, 1);
+				push_2d_rect(r, min, max, color);
+				push_2d_rect_outline(r, min, max, V4(0.5, 0.5, 0.5, 1));
+			}
+			y += frame_time_height + game->text_dy;
+
+			for (int i = 0; i < MAX_BLOCK_COUNT; i++)
+			{
+				TimedBlockStat *stat = &stats[i];
+
+				stat->childs_cycle_count /= record_count;
+				stat->cycle_count /= record_count;
+				stat->calls_count /= record_count;
+				stat->cycles_per_call /= record_count;
+				stat->cycle_count -= stat->childs_cycle_count;
+				total_cycle_count += stat->cycle_count;
+				for (int tid = 0; tid < THREAD_COUNT; tid++)
+				{
+					stat->t_childs_cycle_count[tid] /= record_count;
+					stat->t_cycle_count[tid] /= record_count;
+					stat->t_calls_count[tid] /= record_count;
+					stat->t_cycles_per_call[tid] /= record_count;
+					stat->t_cycle_count[tid] -= stat->t_childs_cycle_count[tid];
+				}
+			}
+			if (game->watch_profiler_frame != -1)
+			{
+				for (int bid = 0; bid < MAX_BLOCK_COUNT; bid++)
+				{
+					memset(&stats[bid], 0, sizeof(stats[bid]));
+
+					stats[bid].block_id = bid;
+					for (int tid = 0; tid < THREAD_COUNT; tid++)
+					{
+						// remove old stats
+						TimedBlockData *record = &game->timed_blocks_record[game->watch_profiler_frame][tid][bid];
+						if (record->calls_count)
+						{
+							stats[bid].t_cycle_count[tid] += record->cycle_count - record->childs_cycle_count;
+							stats[bid].t_childs_cycle_count[tid] += record->childs_cycle_count;
+							stats[bid].t_calls_count[tid] += record->calls_count;
+							stats[bid].t_cycles_per_call[tid] += (double)record->cycle_count / record->calls_count;
+							stats[bid].cycle_count += record->cycle_count - record->childs_cycle_count;
+							stats[bid].childs_cycle_count += record->childs_cycle_count;
+							stats[bid].calls_count += record->calls_count;
+							stats[bid].cycles_per_call += (double)record->cycle_count / record->calls_count;
+						}
+						if (record->filename)
+							stats[bid].data = record;
+					}
+				}
+			}
 			// sort by cycle_count
 			for (int i = 0; i < MAX_BLOCK_COUNT; i++)
 			{
@@ -582,34 +673,6 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 						stats[j + 1] = temp;
 					}
 				}
-			}
-			double total_cycle_count = 0;
-
-
-			float x_offset = 0;
-			for (int i = 0; i < PROFILER_RECORD_FRAMES; i++)
-			{
-				float dx = game->text_dx * 0.6;
-				v2 min = V2(i * dx, y);
-				v2 max = min + V2(dx, game->text_dy);
-
-				if (i == game->curr_profiler_frame)
-					push_2d_rect(r, min, max, V4(1, 0, 0, 1));
-				else
-					push_2d_rect_outline(r, min, max);
-			}
-			y += game->text_dy;
-
-			for (int i = 0; i < MAX_BLOCK_COUNT; i++)
-			{
-				TimedBlockStat *stat = &stats[i];
-
-				stat->childs_cycle_count /= record_count;
-				stat->cycle_count /= record_count;
-				stat->calls_count /= record_count;
-				stat->cycles_per_call /= record_count;
-				stat->cycle_count -= stat->childs_cycle_count;
-				total_cycle_count += stat->cycle_count;
 			}
 			for (int i = 0; i < MAX_BLOCK_COUNT; i++)
 			{
@@ -645,11 +708,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 						if (!stat->t_cycle_count[tid])
 							continue ;
 
-						stat->t_childs_cycle_count[tid] /= record_count;
-						stat->t_cycle_count[tid] /= record_count;
-						stat->t_calls_count[tid] /= record_count;
-						stat->t_cycles_per_call[tid] /= record_count;
-						stat->t_cycle_count[tid] -= stat->t_childs_cycle_count[tid];
+
 
 						snprintf(s, sizeof(s), "%5.2lf%% %d: %.0lfcy %.0lfh %.0lfcy/h", 
 								100 * (stat->t_cycle_count[tid] / stat->cycle_count),
@@ -663,8 +722,24 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 				}
 			}
 		}
+		if (game->frame)
+		{
+			char s[512];
+	
+			float frame_time = game->last_frame_time;
+	
+			if (game->watch_profiler_frame != -1)
+				frame_time = game->last_frame_times[game->watch_profiler_frame];
+	
+			snprintf(s, sizeof(s), "%.2fms %dfps %d records", frame_time,
+					(int)(1000.f / frame_time), record_count);
+			push_2d_text(r, cstring(s), V2(0, 0));
+		}
+		game->last_profiler_height = y;
+
 	}
 #endif
+
 	end_render(r);
 
 #if PROFILING

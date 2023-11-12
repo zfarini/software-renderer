@@ -918,16 +918,18 @@ void render_tile(Render_Context *r, int tile_index)
                 lane_f32 one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
                 lane_f32 z = LaneF32(1) / one_over_z;
 
+                int buffer_index = y * r->buffer_aa.width + (min_x * SAMPLES_PER_PIXEL + ix);
+				
 				if (t->is_2d)
 					z = LaneF32(-1);
+				else
+				{
+               		__m256 zbuf = _mm256_maskload_ps(r->zbuffer + buffer_index, mask.v);
 
-                int buffer_index = y * r->buffer_aa.width + (min_x * SAMPLES_PER_PIXEL + ix);
-
-                __m256 zbuf = _mm256_maskload_ps(r->zbuffer + buffer_index, mask.v);
-
-                mask = mask & (z < LaneF32(zbuf));
-                if (_mm256_testz_si256(mask.v, mask.v))
-                    continue ;
+               		mask = mask & (z < LaneF32(zbuf));
+               		if (_mm256_testz_si256(mask.v, mask.v))
+               			continue ;
+				}
 
 				if (render_zbuffer && !t->no_lighthing)
 				{

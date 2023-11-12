@@ -135,6 +135,8 @@ int main(void)
     game->framebuffer.width  = backbuffer_width;
     game->framebuffer.height = backbuffer_height;
 	game->next_tile_index = TILES_COUNT;
+	game->window_width = window_width;
+	game->window_height = window_height;
 
 #if CODE_RELOADING
 	char *dll_name = get_game_dll_name();
@@ -227,8 +229,8 @@ int main(void)
 				game_input.mouse_buttons[i].is_down = (mouse_state & SDL_BUTTON(i + 1)) != 0;
 			}
 			game_input.prev_mouse_p = game_input.mouse_p;
-			game_input.mouse_p.x = ((float)mouse_x / window_width) * 2 - 1;
-			game_input.mouse_p.y = -(((float)mouse_y / window_height) * 2 - 1);
+			game_input.mouse_p.x = (float)mouse_x / window_width;
+			game_input.mouse_p.y = (float)mouse_y / window_height;
 
 			game_input.mouse_relative_mode = SDL_GetRelativeMouseMode() ? 1 : 0;
 		}

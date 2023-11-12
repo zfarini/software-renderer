@@ -250,9 +250,8 @@ typedef struct
 {
     Texture framebuffer;
 
-	int is_mouse_down;
-	int prev_mouse_x;
-	int prev_mouse_y;
+	int window_width;
+	int window_height;
 
 	int should_quit;
 	float last_frame_time;
@@ -312,7 +311,10 @@ typedef struct
 
 	TimedBlockData timed_blocks_record[PROFILER_RECORD_FRAMES][THREAD_COUNT][MAX_BLOCK_COUNT];
 	TimedBlockStat timed_blocks_stats[MAX_BLOCK_COUNT];
+	float			last_frame_times[PROFILER_RECORD_FRAMES];
 	int	curr_profiler_frame;
+	int watch_profiler_frame;
+	float last_profiler_height;
 } Game;
 
 
