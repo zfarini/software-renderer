@@ -32,15 +32,31 @@ typedef int b32;
 #define CUBES_WIDTH 1
 #define CUBES_HEIGHT 1
 
+#define KILOBYTES(x) (x * 1024)
+#define MEGABYTES(x) (KILOBYTES(x) * 1024ULL)
+#define GIGABYTES(x) (MEGABYTES(x) * 1024ULL)
+
+
+#define MAX_BLOCK_COUNT 256
+
+struct ThreadInfo
+{
+	int	id;
+	int	timed_blocks_stack[MAX_BLOCK_COUNT];
+	int timed_blocks_stack_count;
+	//char storage[KILOBYTES(64)];
+};
+
+thread_local ThreadInfo g_thread_info;
+
+
 typedef struct ThreadWork ThreadWork;
 
 #define THREAD_WORK_FUNC(func) void *func(ThreadWork *work)
 
 typedef THREAD_WORK_FUNC(ThreadWorkCallbackFn);
 
-#define KILOBYTES(x) (x * 1024)
-#define MEGABYTES(x) (KILOBYTES(x) * 1024ULL)
-#define GIGABYTES(x) (MEGABYTES(x) * 1024ULL)
+
 
 struct String
 {
@@ -206,77 +222,69 @@ Texture load_texture(Arena *arena, const char *filename);
 
 struct TimedBlock;
 
-struct TimedBlockData
+struct alignas(64) TimedBlockData
 {
 	const char	*block_name;
     const char	*function_name;
     const char	*filename;
+	int	block_id;
+    int line;
+
     uint64_t cycle_count;
     uint64_t childs_cycle_count;
     int calls_count;
-    int line;
-	uint64_t	last_timer;
 };
 
-
+static_assert(sizeof(TimedBlockData) % 64 == 0, "should be aligned with a cache line");
 // TODO: declare these last thing in the compilation unit and use __COUNTER as length
-#define MAX_BLOCK_COUNT 256
 
-TimedBlockData	timed_blocks1[THREAD_COUNT * MAX_BLOCK_COUNT];
-TimedBlockData	timed_blocks2[THREAD_COUNT * MAX_BLOCK_COUNT];
+alignas(64) TimedBlockData	timed_blocks1[THREAD_COUNT * MAX_BLOCK_COUNT];
+alignas(64) TimedBlockData	timed_blocks2[THREAD_COUNT * MAX_BLOCK_COUNT];
 
+
+uint64_t block_cycle_sum[MAX_BLOCK_COUNT];
 
 TimedBlockData	*timed_blocks = (TimedBlockData *)timed_blocks1;
-
-int timed_blocks_stack[THREAD_COUNT][MAX_BLOCK_COUNT];
-int	timed_blocks_stack_count[THREAD_COUNT];
-
-
-/*
-
-	b1
-		b2
-			b3
-
-
-*/
 
 // TODO: display like average over last 120 frames
 //
 //
+
 struct TimedBlock
 {
 	int bid;
 	int	tid;
+	uint64_t start_rdtsc;
 
-    TimedBlock(const char *block_name, int line, const char *function_name, const char *filename, int block_id, int thread_id = 0)
+    TimedBlock(const char *block_name, int line, const char *function_name, const char *filename, int block_id)
     {
 		bid = block_id;
-		tid = thread_id;
+		tid = g_thread_info.id;
 
 		TimedBlockData *d = &timed_blocks[tid * MAX_BLOCK_COUNT + bid];
 
+		d->block_id = bid;
 		d->line = line;
 		d->function_name = function_name;
         d->filename = filename;
 		d->block_name = block_name;
-		d->last_timer = __rdtsc();
+		start_rdtsc = __rdtsc();
 		d->calls_count++;
 
-		timed_blocks_stack[tid][timed_blocks_stack_count[tid]++] = bid;
+		g_thread_info.timed_blocks_stack[g_thread_info.timed_blocks_stack_count++] = bid;
     }
 
     ~TimedBlock()
     {
+		uint64_t cycle_count = __rdtsc() - start_rdtsc;
+
 		TimedBlockData *d = &timed_blocks[tid * MAX_BLOCK_COUNT + bid];
 
-		uint64_t cycle_count = __rdtsc() - d->last_timer;
 		d->cycle_count += cycle_count;
 
-		timed_blocks_stack_count[tid]--;
-		if (timed_blocks_stack_count[tid])
-			timed_blocks[tid * MAX_BLOCK_COUNT
-				+ timed_blocks_stack[tid][timed_blocks_stack_count[tid] - 1]].childs_cycle_count += cycle_count;
+		int i = --g_thread_info.timed_blocks_stack_count;
+		if (i)
+			timed_blocks[tid * MAX_BLOCK_COUNT + g_thread_info.timed_blocks_stack[i - 1]].childs_cycle_count += cycle_count;
     }
 };
 
@@ -284,17 +292,12 @@ struct TimedBlock
 #define PROFILING 1
 
 #if PROFILING
-#define TIMED_THREAD_BLOCK(name, tid) TimedBlock _timed_block_##__LINE__(name, __LINE__, __FUNCTION__, __FILE__, __COUNTER__,tid)
-#define TIMED_THREAD_FUNCTION(tid) TIMED_THREAD_BLOCK(__FUNCTION__, tid)
-
-#define TIMED_BLOCK(name) TIMED_THREAD_BLOCK(name, 0)
+#define TIMED_BLOCK(name) TimedBlock _timed_block_##__LINE__(name, __LINE__, __FUNCTION__, __FILE__, __COUNTER__)
 #define TIMED_FUNCTION() TIMED_BLOCK(__FUNCTION__)
 
 #else
 #define TIMED_BLOCK(name)
 #define TIMED_FUNCTION()
-#define TIMED_THREAD_BLOCK(name, tid)
-#define TIMED_THREAD_FUNCTION(tid)
 #endif
 
 

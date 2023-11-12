@@ -202,7 +202,8 @@ extern "C" void *game_thread_work(void *data)
 #if 1
 	Game *game = (Game *)data;
 
-	int id = __sync_add_and_fetch(&game->next_thread_index, 1);
+	g_thread_info.id = __sync_add_and_fetch(&game->next_thread_index, 1);
+	//printf("lanched %d %d\n", g_thread_info.id, g_thread_info.timed_blocks_stack_count);
 
 	while (!game->thread_kill_yourself)
 	{
@@ -218,7 +219,7 @@ extern "C" void *game_thread_work(void *data)
 			__sync_bool_compare_and_swap(&game->next_tile_index, tile, TILES_COUNT);
 			continue;
 		}
-		render_tile(game->render_context, tile, id);
+		render_tile(game->render_context, tile);
         __sync_fetch_and_add(&game->tiles_finished, 1);
 	}
 #endif
@@ -508,8 +509,13 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 	{
 		TIMED_BLOCK("profiling");
 
+		TimedBlockData data_sum[MAX_BLOCK_COUNT];
+
+		uint64_t total_cycle_count_for_all_blocks = 0;
+
 		for (int bid = 0; bid < MAX_BLOCK_COUNT; bid++)
 		{
+
 	    	TimedBlockData *d = 0;
 			uint64_t total_cycle_count = 0;
 			int total_call_count = 0;
@@ -522,6 +528,8 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 				total_cycle_count += b->cycle_count;
 				total_call_count += b->calls_count;
 				total_childs_cycle_count += b->childs_cycle_count;
+				assert(b->cycle_count >= b->childs_cycle_count);
+
 				if (b->cycle_count)
 				{
 					d = b;
@@ -529,32 +537,74 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 					thread_id = tid;
 				}
 			}
+			assert(total_cycle_count >= total_childs_cycle_count);
+			data_sum[bid].cycle_count = 0;
 			if (!d)
 				continue ;
 
-			assert(total_cycle_count >= total_childs_cycle_count);
+			data_sum[bid] = *d;
+			data_sum[bid].cycle_count = total_cycle_count;
+			data_sum[bid].calls_count = total_call_count;
+			data_sum[bid].childs_cycle_count = total_childs_cycle_count;
+			total_cycle_count_for_all_blocks += total_cycle_count - total_childs_cycle_count;
+		}
+		// sort by cycle_count
+		{
+			for (int i = 0; i < MAX_BLOCK_COUNT; i++)
+			{
+				for (int j = 0; j < MAX_BLOCK_COUNT -  1; j++)
+				{
+					if (data_sum[j].cycle_count - data_sum[j].childs_cycle_count 
+							< data_sum[j + 1].cycle_count - data_sum[j + 1].childs_cycle_count)
+					{
+						TimedBlockData temp = data_sum[j];
+						data_sum[j] = data_sum[j + 1];
+						data_sum[j + 1] = temp;
+					}
+				}
+			}
+		}
+		for (int bid = 0; bid < MAX_BLOCK_COUNT; bid++)
+		{
+			TimedBlockData *d = &data_sum[bid];
+
+			if (!d->cycle_count)
+				continue ;
 			char s[512];
-			snprintf(s, sizeof(s), "%s:%d: %s: %lu %lu %dh",
+			uint64_t c = d->cycle_count - d->childs_cycle_count;
+
+			block_cycle_sum[bid] += c;
+			//snprintf(s, sizeof(s), "%5.2lf%%: %-20.20s:%4d: %-20.20s: %10lucy %dh",
+			snprintf(s, sizeof(s), "%5.2lf%%: %s:%d: %s: %lucy %.0lfavg %dh",
+					100 * ((double)c / total_cycle_count_for_all_blocks),
 					d->filename, d->line, d->block_name,
-					total_cycle_count, 
-					total_cycle_count - total_childs_cycle_count, d->calls_count);
+					c,
+					(double)block_cycle_sum[bid] / (game->frame + 1),
+					d->calls_count
+					);
 			push_2d_text(r, cstring(s), V2(0, y), 1);
 	    	y += game->text_dy;
-			
+
+			int thread_hit_count = 0;
+			for (int i = 0; i < THREAD_COUNT; i++)
+			{
+				if (last_timed_blocks[i * MAX_BLOCK_COUNT + d->block_id].cycle_count)
+					thread_hit_count++;
+			}
 			float x = game->text_dx * 3;
 			if (thread_hit_count > 1)
 			{
 				for (int tid = 0; tid < THREAD_COUNT; tid++)
 				{
-	    			d = &last_timed_blocks[tid * MAX_BLOCK_COUNT + bid];
+	    			TimedBlockData *curr = &last_timed_blocks[tid * MAX_BLOCK_COUNT + d->block_id];
 	
-					if (!d->cycle_count)
+					if (!curr->cycle_count)
 						continue ;
 					char s[512];
-					assert(d->cycle_count >= d->childs_cycle_count);
-					snprintf(s, sizeof(s), "%d: %lu %lu %dh", tid, d->cycle_count, 
-							d->cycle_count - d->childs_cycle_count,
-							d->calls_count);
+					snprintf(s, sizeof(s), "%5.2lf%% %d: %lucy %dh", 
+							((double)(curr->cycle_count - curr->childs_cycle_count) / c) * 100,
+							tid, curr->cycle_count - curr->childs_cycle_count,
+							curr->calls_count);
 					push_2d_text(r, cstring(s), V2(x, y), 1);
 	    			y += game->text_dy;
 				}
@@ -566,8 +616,17 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 #if PROFILING
 	timed_blocks = last_timed_blocks;
-	memset(timed_blocks, 0, sizeof(timed_blocks1));
-	memset(timed_blocks_stack_count, 0, sizeof(timed_blocks_stack_count));
+	for (int i = 0; i < MAX_BLOCK_COUNT; i++)
+	{
+		for (int j = 0; j < THREAD_COUNT; j++)
+		{
+			TimedBlockData *d = &timed_blocks[j * MAX_BLOCK_COUNT + i];
+
+			d->cycle_count = 0;
+			d->childs_cycle_count = 0;
+			d->calls_count = 0;
+		}
+	}
 #endif
 
 	clock_gettime(CLOCK_MONOTONIC, &time_end);

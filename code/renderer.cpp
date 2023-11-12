@@ -764,9 +764,10 @@ void push_2d_text(Render_Context *r, String s, v2 offset, float scale = 1, v4 co
 	r->text[r->text_count++] = {.string = string_dup(r->arena, s), .offset = offset, .scale = scale, .color = color};
 }
 
-void render_tile(Render_Context *r, int tile_index, int tid = 0)
+
+void render_tile(Render_Context *r, int tile_index)
 {
-	TIMED_THREAD_FUNCTION(tid);
+	TIMED_FUNCTION();
 	v2 clip_min, clip_max;
 
 	get_tile_clip_bounds(r, tile_index, clip_min, clip_max);
@@ -1109,28 +1110,82 @@ void render_tile(Render_Context *r, int tile_index, int tid = 0)
     	    }
 		}
 	}
-
-	for (int y = clip_min_y; y < clip_max_y; y++)
 	{
-		for (int x = clip_min_x; x < clip_max_x; x++)
+		TIMED_BLOCK("final copy");
+		// 5 million cycles..
+		for (int y = clip_min_y; y < clip_max_y; y++)
 		{
-			uint32_t *b = r->buffer_aa.pixels + y * r->buffer_aa.width + x * SAMPLES_PER_PIXEL;
 
-			v3 color = {};
-			for (int i = 0; i < SAMPLES_PER_PIXEL; i++)
+#if SAMPLES_PER_PIXEL == 4
+			for (int x = clip_min_x; x < clip_max_x; x++)
+
 			{
-				uint32_t c = b[i];
+				__m128i s = _mm_loadu_si128((__m128i *)(r->buffer_aa.pixels + y * r->buffer_aa.width + x * SAMPLES_PER_PIXEL));
 
-				color += V3((c >> 24) & 0xFF,
-								   (c >> 16) & 0xFF,
-								   (c >> 8) & 0xFF) / 255.f;
+
+				__m128i mask = _mm_set1_epi32(0xFF);
+	//			__m128 one_over_255 = _mm_set1_ps(1.f / 255);
+
+				// r0 r1 r2 r3
+
+				float cr = _mm_hsum_ps(_mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(s, 24),mask)));
+				float cg = _mm_hsum_ps(_mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(s, 16),mask)));
+				float cb = _mm_hsum_ps(_mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(s, 8),mask)));
+
+				// sqrt((cr / 255) / 4) * 255 = sqrt(cr) * sqrt(255) * 0.5
+				float val = 7.98435971134; // = sqrt(255) * 0.5
+
+				__m128 c = _mm_set_ps(0, cr, cg, cb);
+				//sqrtf(c / 4) * 255 = sqrt(c) * 0.5  * 255
+				c = _mm_add_ps(_mm_mul_ps(_mm_sqrt_ps(c), _mm_set1_ps(val)),
+								_mm_set1_ps(0.5f));
+
+
+#if 1
+				v3 color;
+				color.r = get128_avx(c, 2);
+				color.g = get128_avx(c, 1); 
+				color.b = _mm_cvtss_f32(c);
+
+				r->buffer.pixels[y * r->buffer.width + x] = 
+		    	   				 ((uint32_t)(color.r) << 24) |
+		    	   				 ((uint32_t)(color.g) << 16) |
+		    	   				 ((uint32_t)(color.b) << 8);
+#else
+				alignas(16) float color[4];
+
+				_mm_store_ps(color, c);
+				r->buffer.pixels[y * r->buffer.width + x] = 
+		    	   				 ((uint32_t)(color[2]) << 24) |
+		    	   				 ((uint32_t)(color[1]) << 16) |
+		    	   				 ((uint32_t)(color[0]) << 8);
+#endif
 			}
-			color /= SAMPLES_PER_PIXEL;
+#else
+			for (int x = clip_min_x; x < clip_max_x; x++)
 
-			r->buffer.pixels[y * r->buffer.width + x] = 
-	    	   				 ((uint32_t)(sqrtf(color.r) * 255 + 0.5f) << 24) |
-	    	   				 ((uint32_t)(sqrtf(color.g) * 255 + 0.5f) << 16) |
-	    	   				 ((uint32_t)(sqrtf(color.b) * 255 + 0.5f) << 8);
+			{
+				
+				uint32_t *b = r->buffer_aa.pixels + y * r->buffer_aa.width + x * SAMPLES_PER_PIXEL;
+	
+				v3 color = {};
+				for (int i = 0; i < SAMPLES_PER_PIXEL; i++)
+				{
+					uint32_t c = b[i];
+	
+					color += V3((c >> 24) & 0xFF,
+									   (c >> 16) & 0xFF,
+									   (c >> 8) & 0xFF) / 255.f;
+				}
+				color /= SAMPLES_PER_PIXEL;
+	
+				r->buffer.pixels[y * r->buffer.width + x] = 
+		    	   				 ((uint32_t)(sqrtf(color.r) * 255 + 0.5f) << 24) |
+		    	   				 ((uint32_t)(sqrtf(color.g) * 255 + 0.5f) << 16) |
+		    	   				 ((uint32_t)(sqrtf(color.b) * 255 + 0.5f) << 8);
+			}
+#endif
+
 		}
 	}
 }
@@ -1138,7 +1193,6 @@ void render_tile(Render_Context *r, int tile_index, int tid = 0)
 void end_render(Render_Context *r)
 {
 	{ // TODO: disable z-buffer for these triangles?
-		TIMED_BLOCK("render text");
 		for (int i = 0; i < r->text_count; i++)
 		{
 			Render_Text *text = &r->text[i];

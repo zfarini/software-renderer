@@ -1066,4 +1066,17 @@ internal lane_f32 blend(lane_f32 a, lane_f32 b, lane_u32 mask)
 	return res;
 }
 
+float _mm_hsum_ps(__m128 v) {
+	v = _mm_hadd_ps(v, v);
+	v = _mm_hadd_ps(v, v);
+    return        _mm_cvtss_f32(v);
+}
+
+static inline
+float get128_avx(__m128i a, int idx){
+    __m128i vidx = _mm_cvtsi32_si128(idx);          // vmovd
+    __m128  shuffled = _mm_permutevar_ps(a, vidx);  // vpermilps
+    return _mm_cvtss_f32(shuffled);
+}
+
 #endif

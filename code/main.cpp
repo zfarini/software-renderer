@@ -146,6 +146,8 @@ int main(void)
     assert(game_update_and_render && game_thread_work);
 #endif
 
+	g_thread_info.id = 0;
+
 #if THREADS
 	pthread_t thread_ids[CORE_COUNT];
 	for (int i = 1; i < CORE_COUNT; i++)
