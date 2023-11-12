@@ -126,7 +126,7 @@ int main(void)
 	
 	GameMemory game_memory = {};
 
-	game_memory.permanent_storage_size = GIGABYTES(2);
+	game_memory.permanent_storage_size = GIGABYTES(3);
 	game_memory.permanent_storage = calloc(1, game_memory.permanent_storage_size);
 
 	GameInput game_input = {};

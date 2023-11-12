@@ -50,7 +50,9 @@ struct Render_Context
 
 	int max_triangle_count;
 	Triangle *triangles;
+	Triangle *triangles_2d;
 	int triangle_count;
+	int triangle_2d_count;
 	int *triangles_per_tile[TILES_COUNT];
 	int triangles_per_tile_count[TILES_COUNT];
 

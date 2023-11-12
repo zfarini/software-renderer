@@ -81,6 +81,11 @@ internal v3 V3(float x)
     return v3{x, x, x};
 }
 
+internal v3 V3(v2 xy, float z)
+{
+	return v3{xy.x, xy.y, z};
+}
+
 internal v3 operator+(v3 a, v3 b)
 {
     return {a.x + b.x, a.y + b.y, a.z + b.z};

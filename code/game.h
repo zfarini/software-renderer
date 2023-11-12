@@ -186,9 +186,11 @@ typedef struct
 	Texture *texture;
 	v4 color;
 	int no_lighthing;
+	int is_2d;
     // computed
 	v3 screen_p0, screen_p1, screen_p2;
 	int min_x, min_y, max_x, max_y;
+
 } Triangle;
 
 

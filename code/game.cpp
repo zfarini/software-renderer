@@ -258,8 +258,8 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 		init_arena(&game->scratch_arena, &global_arena, MEGABYTES(64));
 		init_arena(&game->permanent_arena, &global_arena, MEGABYTES(64));
-		init_arena(&game->assets_arena, &global_arena, MEGABYTES(256));
-		init_arena(&game->renderer_arena, &global_arena, GIGABYTES(1));
+		init_arena(&game->assets_arena, &global_arena, MEGABYTES(512));
+		init_arena(&game->renderer_arena, &global_arena, GIGABYTES(2));
 
         game->starwars_tex	= load_texture(&game->assets_arena, "data/starwars.png");
 		game->grass_tex		= load_texture(&game->assets_arena, "data/grass.png");
@@ -306,11 +306,13 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		{
 			stbtt_fontinfo info;
     	    long size;
-    	    unsigned char *font_contents = (unsigned char *)read_entire_file(&game->scratch_arena, "data/liberation-mono.ttf");
+			const char *font_filename = "data/liberation-mono.ttf";
+	//		font_filename = "data/NotoMono-Regular.ttf";
+    	    unsigned char *font_contents = (unsigned char *)read_entire_file(&game->scratch_arena, font_filename);
 
     	    if (!stbtt_InitFont(&info, font_contents, 0))
     	        assert(0);
-    	    int font_line_height = 256;
+    	    int font_line_height = 64;
 
     	    float scale = stbtt_ScaleForPixelHeight(&info, font_line_height);
 
@@ -514,6 +516,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
         y += game->text_dy;
 	}
 
+	//push_2d_triangle(r, V2(0, 0), V2(1, 0), V2(1, 1));
 	//push_2d_rect_outline(r, V2(0, 0.8), V2(0.01, 0.8 + 0.04));
 #if PROFILING
 	TimedBlockData *last_timed_blocks = timed_blocks == timed_blocks1 ? timed_blocks2 : timed_blocks1;
