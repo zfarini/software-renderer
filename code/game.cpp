@@ -400,11 +400,12 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		game->pause_game = !game->pause_game;
 	if (game->pause_game)
 		return ;
-	if (game_input->buttons[SDL_SCANCODE_F2].is_down && !game_input->buttons[SDL_SCANCODE_F2].was_down)
-		game->show_profiler = !game->show_profiler;
-
 	if (game_input->buttons[SDL_SCANCODE_F1].is_down && !game_input->buttons[SDL_SCANCODE_F1].was_down)
 		game->render_zbuffer = !game->render_zbuffer;
+	if (game_input->buttons[SDL_SCANCODE_F2].is_down && !game_input->buttons[SDL_SCANCODE_F2].was_down)
+		game->show_profiler = !game->show_profiler;
+	if (game_input->buttons[SDL_SCANCODE_F3].is_down && !game_input->buttons[SDL_SCANCODE_F3].was_down)
+		game->show_normals = !game->show_normals;
 	// update camera
 	{
 		if (game_input->mouse_buttons[MouseButton_Left].is_down ||
@@ -513,6 +514,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
         y += game->text_dy;
 	}
 
+	//push_2d_rect_outline(r, V2(0, 0.8), V2(0.01, 0.8 + 0.04));
 #if PROFILING
 	TimedBlockData *last_timed_blocks = timed_blocks == timed_blocks1 ? timed_blocks2 : timed_blocks1;
 	{
@@ -579,6 +581,21 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 				}
 			}
 			double total_cycle_count = 0;
+
+
+			float x_offset = 0;
+			for (int i = 0; i < PROFILER_RECORD_FRAMES; i++)
+			{
+				float dx = game->text_dx * 0.6;
+				v2 min = V2(i * dx, y);
+				v2 max = min + V2(dx, game->text_dy);
+
+				if (i == game->curr_profiler_frame)
+					push_2d_rect(r, min, max, V4(1, 0, 0, 1));
+				else
+					push_2d_rect_outline(r, min, max);
+			}
+			y += game->text_dy;
 
 			for (int i = 0; i < MAX_BLOCK_COUNT; i++)
 			{

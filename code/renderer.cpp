@@ -761,12 +761,130 @@ void push_mesh(Render_Context *r, Mesh *mesh, v3 position, v3 scale = V3(1, 1, 1
  //   push_box_outline(r, (min_box + max_box) * 0.5f, (max_box - min_box) * 0.5f);
 }
 
-void push_2d_text(Render_Context *r, String s, v2 offset, float scale = 1, v4 color = V4(1, 1, 1, 1))
-{
-	assert(r->text_count < ARRAY_LENGTH(r->text));
-	r->text[r->text_count++] = {.string = string_dup(r->arena, s), .offset = offset, .scale = scale, .color = color};
-}
 
+
+void render_2d_triangle(Render_Context *r, v2 p0, v2 p1, v2 p2, v4 color = V4(1, 1, 1, 1), Texture *texture = 0,
+			v2 uv0 = V2(1, 0), v2 uv1 = V2(0, 1), v2 uv2 = V2(1, 1))
+{
+	p0 *= V2(r->buffer.width, r->buffer.height);
+	p1 *= V2(r->buffer.width, r->buffer.height);
+	p2 *= V2(r->buffer.width, r->buffer.height);
+
+	int min_x = floorf(fminf(p0.x, fminf(p1.x, p2.x)));
+	int min_y = floorf(fminf(p0.y, fminf(p1.y, p2.y)));
+	int max_x = ceilf(fmaxf(p0.x, fmaxf(p1.x, p2.x)));
+	int max_y = ceilf(fmaxf(p0.y, fmaxf(p1.y, p2.y)));
+
+	if (min_x < 0) min_x = 0;
+	if (min_y < 0) min_y = 0;
+	if (max_x > r->buffer.width) max_x = r->buffer.width;
+	if (max_y > r->buffer.height) max_y = r->buffer.height;
+
+	v2 u = p1 - p0;
+	v2 v = p2 - p0;
+	float det = u.x * v.y - v.x * u.y;
+
+	if (fabs(det) < 0.0001f) // TODO:
+		return ;
+	det = 1 / det;
+
+	v2 edge01 = p1 - p0;
+	v2 edge02 = p2 - p0;
+	v2 edge12 = p2 - p1;
+
+	// top-left fill rule
+	// TODO: we can propably check the left edge case much easily
+	int fill_01 = ((p1.y - p0.y == 0 && p2.y > p1.y) || (p0 + dot(noz(edge01), edge02) * noz(edge01)).x < p2.x);
+	int fill_02 = ((p2.y - p0.y == 0 && p1.y > p2.y) || (p0 + dot(noz(edge02), edge01) * noz(edge02)).x < p1.x);
+	int fill_12 = ((p1.y - p2.y == 0 && p0.y > p1.y) || (p1 + dot(noz(edge12), edge01) * noz(edge12)).x < p0.x);
+
+	for (int y = min_y; y < max_y; y++)
+    {
+		int count = (max_x - min_x) * SAMPLES_PER_PIXEL;
+		for (int ix = 0; ix < count; ix += LANE_WIDTH)
+  		{
+  		     lane_u32 lane_ix = LaneU32(0, 1, 2, 3, 4, 5, 6, 7) + LaneU32(ix);
+
+  		     lane_u32 x = LaneU32(min_x) + 
+  		             (lane_ix >> 2); // TODO: !!!
+
+  		     lane_v2 pixel_offset = r->samples_offset[ix % SAMPLES_PER_PIXEL];
+
+  		     lane_v2 pixel_p = pixel_offset + LaneV2(LaneF32(x), LaneF32(y))
+  		                 - LaneV2(LaneF32(p0.x), LaneF32(p0.y));
+
+
+  		     lane_f32 w1 = det * (pixel_p.x * v.y    + pixel_p.y * (-v.x));
+  		     lane_f32 w2 = det * (pixel_p.x * (-u.y) + pixel_p.y * u.x);
+  		     lane_f32 w0 = LaneF32(1) - (w1 + w2);
+
+
+  		 	lane_f32 zero = LaneF32(0);
+			lane_u32 mask = 
+				(w0 > zero | (w0 == zero & LaneU32(fill_12 ? 0xffffffff : 0))) &
+				(w1 > zero | (w1 == zero & LaneU32(fill_02 ? 0xffffffff : 0))) &
+				(w2 > zero | (w2 == zero & LaneU32(fill_01 ? 0xffffffff : 0)));
+
+
+            if (ix + LANE_WIDTH > count)
+            { // TODO: find a better way to do this
+                alignas(32) uint32_t value[LANE_WIDTH] = {};
+
+                int left = ix + LANE_WIDTH - count;
+
+                for (int j = 0; j < left; j++)
+                    value[LANE_WIDTH - j - 1] = 0xFFFFFFFF;
+
+                __m256i blend =  _mm256_load_si256((__m256i *)value);
+                mask.v = _mm256_blendv_epi8(mask.v, LaneU32(0).v, blend);
+            }
+            if (_mm256_testz_si256(mask.v, mask.v))
+                continue ;
+
+			lane_v3 texture_color = LaneV3(LaneF32(1));
+			lane_f32 alpha =LaneF32(color.a);
+
+			if (texture)
+			{
+            	lane_v2 uv = uv0 * w0 + uv1 * w1 + uv2 * w2;
+
+				uv.x -= LaneF32(_mm256_floor_ps(uv.x.v));
+				uv.y -= LaneF32(_mm256_floor_ps(uv.y.v));
+
+				lane_u32 tx = LaneU32(uv.x * texture->width);
+				lane_u32 ty = LaneU32(uv.y * texture->height);
+				tx = min(tx, LaneU32(texture->width - 1));
+				ty = min(ty, LaneU32(texture->height - 1));
+				lane_u32 idx = ty * texture->width + tx;
+
+				lane_u32 color32 = LaneU32(_mm256_mask_i32gather_epi32(LaneU32(0).v,
+						(int *)texture->pixels, idx.v, mask.v, sizeof(uint32_t)));
+
+				texture_color = color_lane_u32_to_lane_v3(color32);
+				alpha *= LaneF32(color32 & 0xFF) / 255.f;
+			}
+			lane_v3 c = texture_color * color.rgb;
+
+            int buffer_index = y * r->buffer_aa.width + (min_x * SAMPLES_PER_PIXEL + ix);
+
+			lane_u32 old_color32 = LaneU32(_mm256_maskload_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask.v));
+
+			lane_v3 old_color = LaneV3((old_color32 >> 24) & 0xFF, (old_color32 >> 16) & 0xFF, (old_color32 >> 8) & 0xFF) / 255;
+
+			c = old_color + alpha * (c - old_color);
+
+			c.x = min(c.x, LaneF32(1));
+			c.y = min(c.y, LaneF32(1));
+			c.z = min(c.z, LaneF32(1));
+			c = c * 255;
+
+            lane_u32 color32 = (LaneU32(c.x) << 24) | (LaneU32(c.y) << 16) | (LaneU32(c.z) << 8);
+
+            _mm256_maskstore_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask.v, color32.v);
+            _mm256_maskstore_ps((r->zbuffer + buffer_index), mask.v, LaneF32(-1).v);
+		}
+	}
+}
 
 void render_tile(Render_Context *r, int tile_index)
 {
@@ -831,9 +949,9 @@ void render_tile(Render_Context *r, int tile_index)
 
 		// top-left fill rule
 		// TODO: we can propably check the left edge case much easily
-//		int fill_01 = ((p1.y - p0.y == 0 && p2.y > p1.y) || (p0 + dot(noz(edge01), edge02) * noz(edge01)).x < p2.x);
-//		int fill_02 = ((p2.y - p0.y == 0 && p1.y > p2.y) || (p0 + dot(noz(edge02), edge01) * noz(edge02)).x < p1.x);
-//		int fill_12 = ((p1.y - p2.y == 0 && p0.y > p1.y) || (p1 + dot(noz(edge12), edge01) * noz(edge12)).x < p0.x);
+		int fill_01 = ((p1.y - p0.y == 0 && p2.y > p1.y) || (p0 + dot(noz(edge01), edge02) * noz(edge01)).x < p2.x);
+		int fill_02 = ((p2.y - p0.y == 0 && p1.y > p2.y) || (p0 + dot(noz(edge02), edge01) * noz(edge02)).x < p1.x);
+		int fill_12 = ((p1.y - p2.y == 0 && p0.y > p1.y) || (p1 + dot(noz(edge12), edge01) * noz(edge12)).x < p0.x);
 
     	for (int y = min_y; y < max_y; y++)
     	{
@@ -858,7 +976,7 @@ void render_tile(Render_Context *r, int tile_index)
 
 				lane_f32 zero = LaneF32(0);
 
-#if 0
+#if 1
 				lane_u32 mask = 
 					(w0 > zero | (w0 == zero & LaneU32(fill_12 ? 0xffffffff : 0))) &
 					(w1 > zero | (w1 == zero & LaneU32(fill_02 ? 0xffffffff : 0))) &
@@ -1073,27 +1191,10 @@ void render_tile(Render_Context *r, int tile_index)
                                 kd * LaneV3(diffuse) * light_diffuse +
                                 ks * LaneV3(specular) * light_specular);
 
-#if 0
-					c = 0.5f * (n + LaneV3(LaneF32(1)));
-#else
-
-					c *= texture_color * t->color.rgb;
-#endif
-#if 0
-                    float fog_start = 20;
-                    float fog_dist = 300;
-
-                    
-                    lane_f32 dist = length(p);
-
-
-                    lane_f32 fog = max(dist - LaneF32(fog_start), LaneF32(0));
-
-                    fog = fog / fog_dist;
-                    fog = min(fog, LaneF32(1));
-
-                    c *= LaneF32(1) - fog;
-#endif
+					if (r->game->show_normals)
+						c = 0.5f * (n + LaneV3(LaneF32(1)));
+					else
+						c *= texture_color * t->color.rgb;
 				}
 				lane_u32 old_color32 = LaneU32(_mm256_maskload_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask.v));
 
@@ -1186,6 +1287,7 @@ void render_tile(Render_Context *r, int tile_index)
 	}
 }
 
+
 void end_render(Render_Context *r)
 {
 	{ // TODO: disable z-buffer for these triangles?
@@ -1196,7 +1298,7 @@ void end_render(Render_Context *r)
 			float xoffset = 0;
 			float yoffset = 0;
 	
-			float dx = r->film_width * r->game->text_dx * text->scale;
+			float dx = r->game->text_dx * text->scale;
 			float dy = dx * (r->char_height_over_width);
 
 			for (int i = 0; i < text->string.len; i++)
@@ -1217,9 +1319,15 @@ void end_render(Render_Context *r)
 				float ux_min = (c - r->first_char) * r->text_du;
 				float ux_max = ux_min + r->text_du;
 
+				xoffset += dx;
+#if 0
 				v3 offset = V3(text->offset.x * r->film_width + xoffset, 
 							   (-text->offset.y) * r->film_height + yoffset,
 							   -r->near_clip_plane - 0.001f);
+
+
+				v2 min = V2(text->offset.x + xoffset / r->film_width,
+							text->offset.y + yoffset / r->film_width);
 
 				offset += V3(-r->film_width, r->film_height, 0) * 0.5f;
 				offset.y -= dy;
@@ -1264,7 +1372,8 @@ void end_render(Render_Context *r)
 					t.no_lighthing = 1;
 					push_triangle(r, &t);
 				}
-				xoffset += dx;
+#endif
+
 			}
 		}
 	}
@@ -1294,5 +1403,25 @@ void end_render(Render_Context *r)
 	for (int i = 0; i < TILES_COUNT; i++)
 		render_tile(r, i);
 #endif
+}
+
+void push_2d_text(Render_Context *r, String s, v2 offset, float scale = 1, v4 color = V4(1, 1, 1, 1))
+{
+	assert(r->text_count < ARRAY_LENGTH(r->text));
+	r->text[r->text_count++] = {.string = string_dup(r->arena, s), .offset = offset, .scale = scale, .color = color};
+}
+
+void	push_2d_rect(Render_Context *r, v2 min, v2 max, v4 color = V4(1, 1, 1, 1))
+{
+	render_2d_triangle(r, min, V2(max.x, min.y), max, color);
+	render_2d_triangle(r, min, V2(min.x, max.y), max, color);
+}
+
+void push_2d_rect_outline(Render_Context *r, v2 min, v2 max, v4 color = V4(1, 1, 1, 1), float thickness = 0.001f)
+{
+	push_2d_rect(r, min, V2(min.x + thickness, max.y), color); // left
+	push_2d_rect(r, V2(max.x - thickness, min.y), max, color); // right
+	push_2d_rect(r, V2(min.x + thickness, min.y), V2(max.x - thickness, min.y + thickness), color); // top
+	push_2d_rect(r, V2(min.x + thickness, max.y - thickness), V2(max.x - thickness, max.y), color); // bottom
 }
 

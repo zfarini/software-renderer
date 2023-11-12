@@ -306,6 +306,7 @@ typedef struct
 	int render_zbuffer;
 	int pause_game;
 	int	show_profiler;
+	int show_normals;
 
 	TimedBlockData timed_blocks_record[PROFILER_RECORD_FRAMES][THREAD_COUNT][MAX_BLOCK_COUNT];
 	TimedBlockStat timed_blocks_stats[MAX_BLOCK_COUNT];
