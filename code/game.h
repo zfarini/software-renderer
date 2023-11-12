@@ -37,7 +37,8 @@ typedef int b32;
 #define GIGABYTES(x) (MEGABYTES(x) * 1024ULL)
 
 
-#define MAX_BLOCK_COUNT 256
+#define MAX_BLOCK_COUNT 128
+#define PROFILER_RECORD_FRAMES 120
 
 struct ThreadInfo
 {
@@ -48,6 +49,100 @@ struct ThreadInfo
 };
 
 thread_local ThreadInfo g_thread_info;
+
+
+struct TimedBlock;
+
+struct TimedBlockData
+{
+	const char	*block_name;
+    const char	*function_name;
+    const char	*filename;
+    int line;
+	int	block_id;
+
+    int calls_count;
+    uint64_t cycle_count;
+    uint64_t childs_cycle_count;
+};
+
+//static_assert(sizeof(TimedBlockData) % 64 == 0, "should be aligned with a cache line");
+// TODO: declare these last thing in the compilation unit and use __COUNTER as length
+
+TimedBlockData	timed_blocks1[THREAD_COUNT * MAX_BLOCK_COUNT];
+TimedBlockData	timed_blocks2[THREAD_COUNT * MAX_BLOCK_COUNT];
+
+
+uint64_t block_cycle_sum[MAX_BLOCK_COUNT];
+
+TimedBlockData	*timed_blocks = (TimedBlockData *)timed_blocks1;
+
+struct TimedBlock
+{
+	int bid;
+	int	tid;
+	uint64_t start_rdtsc;
+
+    TimedBlock(const char *block_name, int line, const char *function_name, const char *filename, int block_id)
+    {
+		bid = block_id;
+		tid = g_thread_info.id;
+
+		TimedBlockData *d = &timed_blocks[tid * MAX_BLOCK_COUNT + bid];
+
+		d->block_id = bid;
+		d->line = line;
+		d->function_name = function_name;
+        d->filename = filename;
+		d->block_name = block_name;
+		start_rdtsc = __rdtsc();
+		d->calls_count++;
+
+		g_thread_info.timed_blocks_stack[g_thread_info.timed_blocks_stack_count++] = bid;
+    }
+
+    ~TimedBlock()
+    {
+		uint64_t cycle_count = __rdtsc() - start_rdtsc;
+
+		TimedBlockData *d = &timed_blocks[tid * MAX_BLOCK_COUNT + bid];
+
+		d->cycle_count += cycle_count;
+
+		int i = --g_thread_info.timed_blocks_stack_count;
+		if (i)
+			timed_blocks[tid * MAX_BLOCK_COUNT + g_thread_info.timed_blocks_stack[i - 1]].childs_cycle_count += cycle_count;
+    }
+};
+
+
+#define PROFILING 1
+
+#if PROFILING
+#define TIMED_BLOCK(name) TimedBlock _timed_block_##__LINE__(name, __LINE__, __FUNCTION__, __FILE__, __COUNTER__)
+#define TIMED_FUNCTION() TIMED_BLOCK(__FUNCTION__)
+
+#else
+#define TIMED_BLOCK(name)
+#define TIMED_FUNCTION()
+#endif
+
+
+struct TimedBlockStat {
+	double t_cycle_count[THREAD_COUNT];
+	double t_childs_cycle_count[THREAD_COUNT];
+	double t_calls_count[THREAD_COUNT];
+	double t_cycles_per_call[THREAD_COUNT];
+
+	double cycle_count;
+	double childs_cycle_count;
+	double calls_count;
+	double cycles_per_call;
+
+	int		block_id;
+	TimedBlockData *data;
+};
+
 
 
 typedef struct ThreadWork ThreadWork;
@@ -148,6 +243,7 @@ struct GameInput
 
 struct Render_Context;
 
+
 typedef struct
 {
     Texture framebuffer;
@@ -209,6 +305,11 @@ typedef struct
 
 	int render_zbuffer;
 	int pause_game;
+	int	show_profiler;
+
+	TimedBlockData timed_blocks_record[PROFILER_RECORD_FRAMES][THREAD_COUNT][MAX_BLOCK_COUNT];
+	TimedBlockStat timed_blocks_stats[MAX_BLOCK_COUNT];
+	int	curr_profiler_frame;
 } Game;
 
 
@@ -219,87 +320,5 @@ typedef void *GameThreadWorkFn(void *);
 #include "renderer.h"
 
 Texture load_texture(Arena *arena, const char *filename);
-
-struct TimedBlock;
-
-struct alignas(64) TimedBlockData
-{
-	const char	*block_name;
-    const char	*function_name;
-    const char	*filename;
-	int	block_id;
-    int line;
-
-    uint64_t cycle_count;
-    uint64_t childs_cycle_count;
-    int calls_count;
-};
-
-static_assert(sizeof(TimedBlockData) % 64 == 0, "should be aligned with a cache line");
-// TODO: declare these last thing in the compilation unit and use __COUNTER as length
-
-alignas(64) TimedBlockData	timed_blocks1[THREAD_COUNT * MAX_BLOCK_COUNT];
-alignas(64) TimedBlockData	timed_blocks2[THREAD_COUNT * MAX_BLOCK_COUNT];
-
-
-uint64_t block_cycle_sum[MAX_BLOCK_COUNT];
-
-TimedBlockData	*timed_blocks = (TimedBlockData *)timed_blocks1;
-
-// TODO: display like average over last 120 frames
-//
-//
-
-struct TimedBlock
-{
-	int bid;
-	int	tid;
-	uint64_t start_rdtsc;
-
-    TimedBlock(const char *block_name, int line, const char *function_name, const char *filename, int block_id)
-    {
-		bid = block_id;
-		tid = g_thread_info.id;
-
-		TimedBlockData *d = &timed_blocks[tid * MAX_BLOCK_COUNT + bid];
-
-		d->block_id = bid;
-		d->line = line;
-		d->function_name = function_name;
-        d->filename = filename;
-		d->block_name = block_name;
-		start_rdtsc = __rdtsc();
-		d->calls_count++;
-
-		g_thread_info.timed_blocks_stack[g_thread_info.timed_blocks_stack_count++] = bid;
-    }
-
-    ~TimedBlock()
-    {
-		uint64_t cycle_count = __rdtsc() - start_rdtsc;
-
-		TimedBlockData *d = &timed_blocks[tid * MAX_BLOCK_COUNT + bid];
-
-		d->cycle_count += cycle_count;
-
-		int i = --g_thread_info.timed_blocks_stack_count;
-		if (i)
-			timed_blocks[tid * MAX_BLOCK_COUNT + g_thread_info.timed_blocks_stack[i - 1]].childs_cycle_count += cycle_count;
-    }
-};
-
-
-#define PROFILING 1
-
-#if PROFILING
-#define TIMED_BLOCK(name) TimedBlock _timed_block_##__LINE__(name, __LINE__, __FUNCTION__, __FILE__, __COUNTER__)
-#define TIMED_FUNCTION() TIMED_BLOCK(__FUNCTION__)
-
-#else
-#define TIMED_BLOCK(name)
-#define TIMED_FUNCTION()
-#endif
-
-
 
 #endif

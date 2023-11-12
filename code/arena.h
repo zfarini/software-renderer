@@ -38,7 +38,7 @@ ArenaPushParams default_arena_params()
 	ArenaPushParams params;
 
 	params.flags = 0;
-	params.alignment = 16; // TODO:
+	params.alignment = 32; // TODO:
 	return (params);
 }
 

@@ -79,11 +79,11 @@ int  WinMain(
 int main(void)
 #endif
 {
-	int window_width = 512;
-	int window_height = 512;
+	int window_width = 800;
+	int window_height = 800;
 
-	int backbuffer_width = 512;
-	int backbuffer_height = 512;
+	int backbuffer_width = window_width;
+	int backbuffer_height = window_height;
 
 	assert(backbuffer_width  % TILES_PER_WIDTH == 0);
 	assert(backbuffer_height % TILES_PER_HEIGHT == 0);

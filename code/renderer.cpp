@@ -187,6 +187,7 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 	triangles[0].p1 = world_to_camera(r, triangle->p1);
 	triangles[0].p2 = world_to_camera(r, triangle->p2);
 
+#if 1
 	{
 		v3 n = cross(triangles[0].p1 - triangles[0].p0, triangles[0].p2 - triangles[0].p0);
 
@@ -194,6 +195,7 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 		if (dot(n, triangles[0].p0) > 0)
 			return ;
 	}
+#endif
 
 	for (int i = 0; i < ARRAY_LENGTH(r->clip_planes) && triangle_count; i++)
 	{
@@ -366,6 +368,7 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
 	v3 p12 = c + u + v - w;
 	v3 p13 = c - u + v - w;
 
+	// TODO: make sure these are counter-clockwise
     struct 
 	{
 		v3 p0, p1, p2;
@@ -1111,8 +1114,7 @@ void render_tile(Render_Context *r, int tile_index)
 		}
 	}
 	{
-		TIMED_BLOCK("final copy");
-		// 5 million cycles..
+		TIMED_BLOCK("samples to pixels");
 		for (int y = clip_min_y; y < clip_max_y; y++)
 		{
 
@@ -1124,9 +1126,6 @@ void render_tile(Render_Context *r, int tile_index)
 
 
 				__m128i mask = _mm_set1_epi32(0xFF);
-	//			__m128 one_over_255 = _mm_set1_ps(1.f / 255);
-
-				// r0 r1 r2 r3
 
 				float cr = _mm_hsum_ps(_mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(s, 24),mask)));
 				float cg = _mm_hsum_ps(_mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(s, 16),mask)));
@@ -1136,11 +1135,8 @@ void render_tile(Render_Context *r, int tile_index)
 				float val = 7.98435971134; // = sqrt(255) * 0.5
 
 				__m128 c = _mm_set_ps(0, cr, cg, cb);
-				//sqrtf(c / 4) * 255 = sqrt(c) * 0.5  * 255
 				c = _mm_add_ps(_mm_mul_ps(_mm_sqrt_ps(c), _mm_set1_ps(val)),
 								_mm_set1_ps(0.5f));
-
-
 #if 1
 				v3 color;
 				color.r = get128_avx(c, 2);
