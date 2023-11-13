@@ -79,6 +79,11 @@ struct Render_Context
 	Render_Text text[8192];
 	int text_count;
 	Arena *arena;
+
+
+    int enable_clip_rect;
+    v2 clip_rect_min;
+    v2 clip_rect_max;
 };
 
 //void begin_render(Render_Context *r);

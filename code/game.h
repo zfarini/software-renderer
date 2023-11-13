@@ -187,6 +187,8 @@ typedef struct
 	v4 color;
 	int no_lighthing;
 	int is_2d;
+    v2 clip_min;
+    v2 clip_max;
     // computed
 	v3 screen_p0, screen_p1, screen_p2;
 	int min_x, min_y, max_x, max_y;
@@ -313,8 +315,9 @@ typedef struct
 	TimedBlockStat timed_blocks_stats[MAX_BLOCK_COUNT];
 	float			last_frame_times[PROFILER_RECORD_FRAMES];
 	int	curr_profiler_frame;
-	int watch_profiler_frame;
-	float last_profiler_height;
+	int profiler_watch_frame;
+    int profiler_paused;
+    float   last_profiler_height;
 } Game;
 
 

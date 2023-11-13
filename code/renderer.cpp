@@ -324,12 +324,28 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 		t->min_y = floorf(tmin.y);
 		t->max_y = ceilf(tmax.y);
 	
+        if (triangle->is_2d)
+        {
+            v2 clip_min = triangle->clip_min * V2(r->buffer.width, r->buffer.height);
+            v2 clip_max = triangle->clip_max * V2(r->buffer.width, r->buffer.height);
+
+            if (t->min_x < clip_min.x)
+                t->min_x = clip_min.x;
+            if (t->max_x > clip_max.x)
+                t->max_x = clip_max.x;
+            if (t->min_y < clip_min.y)
+                t->min_y = clip_min.y;
+            if (t->max_y > clip_max.y)
+                t->max_y = clip_max.y;
+        }
 		if (t->min_x < 0) t->min_x = 0;
 		if (t->min_y < 0) t->min_y = 0;
 		if (t->max_x > r->buffer.width) t->max_x = r->buffer.width;
 		if (t->max_y > r->buffer.height) t->max_y = r->buffer.height;
 		if (t->min_x >= t->max_x || t->min_y >= t->max_y)
 			continue;
+
+
 
 		assert(r->triangle_count < r->max_triangle_count);
 
@@ -794,6 +810,13 @@ void push_2d_triangle(Render_Context *r, v2 p0, v2 p1, v2 p2, v4 color = V4(1, 1
 	t.uv2 = uv2;
 	t.is_2d = 1;
 	t.no_lighthing = 1;
+    t.clip_min = V2(0, 0);
+    t.clip_max = V2(1, 1);
+    if (r->enable_clip_rect)
+    {
+        t.clip_min = r->clip_rect_min;
+        t.clip_max = r->clip_rect_max;
+    }
 
 	r->triangles_2d[r->triangle_2d_count++] = t;
 }
@@ -1239,7 +1262,7 @@ void push_2d_rect_outline(Render_Context *r, v2 min, v2 max, v4 color = V4(1, 1,
 	push_2d_rect(r, V2(min.x + thickness, max.y - thickness), V2(max.x - thickness, max.y), color); // bottom
 }
 
-void push_2d_text(Render_Context *r, String s, v2 offset, float scale = 1, v4 color = V4(1, 1, 1, 1))
+void push_2d_text(Render_Context *r, String s, v2 offset, v4 color = V4(1, 1, 1, 1), float scale = 1)
 {
 	float dx = r->game->text_dx * scale;
 	float dy = dx * r->char_height_over_width;

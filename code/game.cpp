@@ -347,7 +347,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 
             // TODO: this is propably wrong for non square display?
-            game->text_dx = (1.f / 80);
+            game->text_dx = (1.f / 100);
             game->text_dy = game->text_dx * ((float)font_line_height / font_advance_x);
 
 			uint8_t *bitmap = push_array(&game->scratch_arena, uint8_t, font_line_height * font_advance_x);
@@ -505,16 +505,14 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 	int record_count = min(PROFILER_RECORD_FRAMES, game->frame + 1);
 
-    float y = 0;
 
-
-    y += game->text_dy;
 	//push_2d_triangle(r, V2(0, 0), V2(1, 0), V2(1, 1));
 	//push_2d_rect_outline(r, V2(0, 0.8), V2(0.01, 0.8 + 0.04));
 #if PROFILING
 	TimedBlockData *last_timed_blocks = timed_blocks == timed_blocks1 ? timed_blocks2 : timed_blocks1;
 	{
-		game->last_frame_times[game->curr_profiler_frame] = game->last_frame_time;
+        if (!game->profiler_paused)
+		    game->last_frame_times[game->curr_profiler_frame] = game->last_frame_time;
 
 		TIMED_BLOCK("profiling");
 
@@ -524,54 +522,61 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		for (int bid = 0; bid < MAX_BLOCK_COUNT; bid++)
 		{
 			stats[bid].block_id = bid;
-			for (int tid = 0; tid < THREAD_COUNT; tid++)
-			{
-				// remove old stats
-				TimedBlockData *record = &game->timed_blocks_record[game->curr_profiler_frame][tid][bid];
-				if (record->calls_count)
-				{
-					stats[bid].t_cycle_count[tid] -= record->cycle_count;
-					stats[bid].t_childs_cycle_count[tid] -= record->childs_cycle_count;
-					stats[bid].t_calls_count[tid] -= record->calls_count;
-					stats[bid].t_cycles_per_call[tid] -= (double)record->cycle_count / record->calls_count;
-					stats[bid].cycle_count -= record->cycle_count;
-					stats[bid].childs_cycle_count -= record->childs_cycle_count;
-					stats[bid].calls_count -= record->calls_count;
-					stats[bid].cycles_per_call -= (double)record->cycle_count / record->calls_count;
-				}
+            if (!game->profiler_paused)
+            { // TODO: maybe we don't want to completely discard the data for this frame?
+		    	for (int tid = 0; tid < THREAD_COUNT; tid++)
+		    	{
+		    		// remove old stats
+		    		TimedBlockData *record = &game->timed_blocks_record[game->curr_profiler_frame][tid][bid];
+		    		if (record->calls_count)
+		    		{
+		    			stats[bid].t_cycle_count[tid] -= record->cycle_count;
+		    			stats[bid].t_childs_cycle_count[tid] -= record->childs_cycle_count;
+		    			stats[bid].t_calls_count[tid] -= record->calls_count;
+		    			stats[bid].t_cycles_per_call[tid] -= (double)record->cycle_count / record->calls_count;
+		    			stats[bid].cycle_count -= record->cycle_count;
+		    			stats[bid].childs_cycle_count -= record->childs_cycle_count;
+		    			stats[bid].calls_count -= record->calls_count;
+		    			stats[bid].cycles_per_call -= (double)record->cycle_count / record->calls_count;
+		    		}
 
-				record = &last_timed_blocks[tid * MAX_BLOCK_COUNT + bid];
+		    		record = &last_timed_blocks[tid * MAX_BLOCK_COUNT + bid];
 
-				game->timed_blocks_record[game->curr_profiler_frame][tid][bid] = *record;
-				// add new stats
-				if (record->calls_count)
-				{
-					stats[bid].t_cycle_count[tid] += record->cycle_count;
-					stats[bid].t_childs_cycle_count[tid] += record->childs_cycle_count;
-					stats[bid].t_calls_count[tid] += record->calls_count;
-					stats[bid].t_cycles_per_call[tid] += (double)record->cycle_count / record->calls_count;
-					stats[bid].cycle_count += record->cycle_count;
-					stats[bid].childs_cycle_count += record->childs_cycle_count;
-					stats[bid].calls_count += record->calls_count;
-					stats[bid].cycles_per_call += (double)record->cycle_count / record->calls_count;
-				}
+		    		game->timed_blocks_record[game->curr_profiler_frame][tid][bid] = *record;
+		    		// add new stats
+		    		if (record->calls_count)
+		    		{
+		    			stats[bid].t_cycle_count[tid] += record->cycle_count;
+		    			stats[bid].t_childs_cycle_count[tid] += record->childs_cycle_count;
+		    			stats[bid].t_calls_count[tid] += record->calls_count;
+		    			stats[bid].t_cycles_per_call[tid] += (double)record->cycle_count / record->calls_count;
+		    			stats[bid].cycle_count += record->cycle_count;
+		    			stats[bid].childs_cycle_count += record->childs_cycle_count;
+		    			stats[bid].calls_count += record->calls_count;
+		    			stats[bid].cycles_per_call += (double)record->cycle_count / record->calls_count;
+		    		}
 
-				if (record->filename)
-					stats[bid].data = record;
-			}
+		    		if (record->filename)
+		    			stats[bid].data = record;
+		    	}
+            }
 		}
 		if (game->show_profiler && game->frame)
 		{
-	//		push_2d_rect(r, V2(0, 0), V2(1, game->last_profiler_height), V4(0.5, 0.5, 0.5, 0.8));
-
 			TimedBlockStat _stats[MAX_BLOCK_COUNT];
 			memcpy(_stats, stats, sizeof(_stats));
 			stats = _stats;
 
+            float y = 0;
+
+            float profiler_width = 0.7;
+            float profiler_height = game->last_profiler_height;
+
+            r->enable_clip_rect = 1;
+            r->clip_rect_min = V2(0, y);
+            r->clip_rect_max = r->clip_rect_min + V2(profiler_width, profiler_height);
 
 			v2 mouse_p = game_input->mouse_p;
-
-			game->watch_profiler_frame = -1;
 
 			float record_rect_height = game->text_dy;
 			float frame_time_height = game->text_dy * 3;
@@ -579,12 +584,34 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			record_rect_height = 0;
 
 
+            push_2d_rect(r, V2(0, 0), V2(profiler_width, profiler_height), V4(0, 0, 0, 0.8));
+
+
+	    	{
+	    		char s[512];
+	    
+	    		float frame_time = 0;
+	    
+	    		if (game->profiler_paused)
+	    			frame_time = game->last_frame_times[game->profiler_watch_frame];
+                else
+                {
+                    for (int i = 0; i < record_count; i++)
+                        frame_time += game->last_frame_times[i];
+                    frame_time /= record_count;
+                }
+	    
+	    		snprintf(s, sizeof(s), "%.2fms %dfps %d records", frame_time,
+	    				(int)(1000.f / frame_time), record_count);
+	    		push_2d_text(r, cstring(s), V2(0, 0));
+                y += game->text_dy;
+	    	}
 
 			for (int i = 0; i < PROFILER_RECORD_FRAMES; i++)
 			{
 				float dx = game->text_dx * 0.6;
 
-				dx = (1.f / PROFILER_RECORD_FRAMES);
+				dx = (profiler_width / PROFILER_RECORD_FRAMES) * 0.9;
 
 				float h = game->last_frame_times[i] / (1000.f / 60);
 
@@ -605,20 +632,47 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 					if (game_input->mouse_buttons[MouseButton_Left].is_down
 							&& !game_input->mouse_buttons[MouseButton_Left].was_down)
 					{
-						game->pause_game = 1;
-						game->watch_profiler_frame = i;
+                        game->profiler_paused = 1;
+						game->profiler_watch_frame = i;
 					}
 				}
 				else if (i == game->curr_profiler_frame)
 					color = V4(1, 1, 0, 1);
+                if (game->profiler_paused && i == game->profiler_watch_frame)
+					color = V4(0, 1, 0, 1);
 				push_2d_rect(r, min, max, color);
 				push_2d_rect_outline(r, min, max, V4(0.5, 0.5, 0.5, 1));
 			}
-			y += frame_time_height + game->text_dy;
+			y += frame_time_height + game->text_dy * 0.5f;
+
+            {
+                float offy = game->text_dy * 0.3;
+
+                v2 min = V2(0, y);
+                v2 max = V2(5 * game->text_dx, y + game->text_dy + offy * 2);
+                push_2d_rect(r, min, max, V4(0, 0, 0, 1));
+
+                v4 color = V4(0.7, 0.7, 0.7, 1);
+                if (mouse_p.x >= min.x && mouse_p.x < max.x && mouse_p.y >= min.y && mouse_p.y < max.y)
+                {
+                    color = V4(1, 1, 1, 1);
+					if (game_input->mouse_buttons[MouseButton_Left].is_down
+							&& !game_input->mouse_buttons[MouseButton_Left].was_down)
+                    {
+                        game->profiler_paused = !game->profiler_paused;
+                        if (game->profiler_paused)
+                            game->profiler_watch_frame = game->curr_profiler_frame;
+                    }
+                }
+
+                push_2d_text(r, cstring("pause"), V2(0, y + offy), color);
+
+                y += game->text_dy + 3 * offy;
+            }
 
 			double total_cycle_count = 0;
 
-			if (game->watch_profiler_frame != -1)
+			if (game->profiler_paused)
 			{
 				for (int bid = 0; bid < MAX_BLOCK_COUNT; bid++)
 				{
@@ -628,7 +682,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 					for (int tid = 0; tid < THREAD_COUNT; tid++)
 					{
 						// remove old stats
-						TimedBlockData *record = &game->timed_blocks_record[game->watch_profiler_frame][tid][bid];
+						TimedBlockData *record = &game->timed_blocks_record[game->profiler_watch_frame][tid][bid];
 						if (record->calls_count)
 						{
 							stats[bid].t_cycle_count[tid] += record->cycle_count - record->childs_cycle_count;
@@ -691,14 +745,15 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 				char s[512];
 
-				snprintf(s, sizeof(s), "%5.2lf%%: %s:%d: %s: %.0lfcy %.0lfh %.0lfcy/h",
+				snprintf(s, sizeof(s), "%5.2lf%% %10.0lfcy %5.0lfh %s (%s:%d)",
 						100 * (stat->cycle_count / total_cycle_count),
-						data->filename, data->line, data->block_name,
-						stat->cycle_count,
-						stat->calls_count,
-						stat->cycles_per_call
+                        stat->cycle_count,
+                        stat->calls_count,
+                        data->block_name,
+                        data->filename,
+                        data->line
 						);
-				push_2d_text(r, cstring(s), V2(0, y), 1);
+				push_2d_text(r, cstring(s), V2(0, y));
 		    	y += game->text_dy;
 
 				int thread_hit_count = 0;
@@ -708,6 +763,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 						thread_hit_count++;
 				}
 				float x = game->text_dx * 3;
+#if 1
 				if (thread_hit_count > 1)
 				{
 					for (int tid = 0; tid < THREAD_COUNT; tid++)
@@ -715,34 +771,23 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 						if (!stat->t_cycle_count[tid])
 							continue ;
 
-
-
-						snprintf(s, sizeof(s), "%5.2lf%% %d: %.0lfcy %.0lfh %.0lfcy/h", 
-								100 * (stat->t_cycle_count[tid] / stat->cycle_count),
-								tid,
-								stat->t_cycle_count[tid],
-								stat->t_calls_count[tid],
-								stat->t_cycles_per_call[tid]);
-						push_2d_text(r, cstring(s), V2(x, y), 1);
+				        snprintf(s, sizeof(s), "%5.2lf%% %10.0lfcy %5.0lfh tid:%d",
+						    100 * (stat->t_cycle_count[tid] / stat->cycle_count),
+                            stat->t_cycle_count[tid],
+                            stat->t_calls_count[tid],
+                            tid
+						);
+						push_2d_text(r, cstring(s), V2(x, y));
 		    			y += game->text_dy;
 					}
 				}
+#endif
+                game->last_profiler_height = y;
 			}
+            r->enable_clip_rect = 0;
 		}
-		if (game->frame)
-		{
-			char s[512];
-	
-			float frame_time = game->last_frame_time;
-	
-			if (game->watch_profiler_frame != -1)
-				frame_time = game->last_frame_times[game->watch_profiler_frame];
-	
-			snprintf(s, sizeof(s), "%.2fms %dfps %d records", frame_time,
-					(int)(1000.f / frame_time), record_count);
-			push_2d_text(r, cstring(s), V2(0, 0));
-		}
-		game->last_profiler_height = y;
+
+
 
 	}
 #endif
@@ -762,7 +807,8 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			d->calls_count = 0;
 		}
 	}
-	game->curr_profiler_frame = (game->curr_profiler_frame + 1) % PROFILER_RECORD_FRAMES;
+    if (!game->profiler_paused)
+	    game->curr_profiler_frame = (game->curr_profiler_frame + 1) % PROFILER_RECORD_FRAMES;
 #endif
 
 	clock_gettime(CLOCK_MONOTONIC, &time_end);
