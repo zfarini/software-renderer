@@ -1,8 +1,8 @@
 #include "game.h"
 
-void swap(float &a, float &b)
+void swap(f32 &a, f32 &b)
 {
-	float t = a;
+	f32 t = a;
 
 	a = b;
 	b = t;

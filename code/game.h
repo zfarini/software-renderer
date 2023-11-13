@@ -14,6 +14,17 @@
 #include <stdalign.h>
 #include <inttypes.h>
 
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
+
+typedef float f32;
+typedef double f64;
 
 typedef int b32;
 
@@ -25,6 +36,7 @@ typedef int b32;
 #define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(*(arr)))
 
 #include "math.h"
+#include "simd.h"
 
 #define THREADS 1
 #define CORE_COUNT (8)
@@ -45,11 +57,9 @@ struct ThreadInfo
 	int	id;
 	int	timed_blocks_stack[MAX_BLOCK_COUNT];
 	int timed_blocks_stack_count;
-	//char storage[KILOBYTES(64)];
 };
 
 thread_local ThreadInfo g_thread_info;
-
 
 struct TimedBlock;
 
@@ -66,14 +76,8 @@ struct TimedBlockData
     uint64_t childs_cycle_count;
 };
 
-//static_assert(sizeof(TimedBlockData) % 64 == 0, "should be aligned with a cache line");
-// TODO: declare these last thing in the compilation unit and use __COUNTER as length
-
 TimedBlockData	timed_blocks1[THREAD_COUNT * MAX_BLOCK_COUNT];
 TimedBlockData	timed_blocks2[THREAD_COUNT * MAX_BLOCK_COUNT];
-
-
-uint64_t block_cycle_sum[MAX_BLOCK_COUNT];
 
 TimedBlockData	*timed_blocks = (TimedBlockData *)timed_blocks1;
 
@@ -230,7 +234,7 @@ enum MouseButton
 
 struct GameInput
 {
-	float	dt;
+	f32	dt;
 
 	GameButton mouse_buttons[MouseButton_Count];
 
@@ -242,7 +246,7 @@ struct GameInput
 
 	b32 mouse_relative_mode;
 
-	float mouse_scroll;
+	f32 mouse_scroll;
 };
 
 struct Render_Context;
@@ -256,7 +260,7 @@ typedef struct
 	int window_height;
 
 	int should_quit;
-	float last_frame_time;
+	f32 last_frame_time;
 
 	v3 camera_p, camera_rotation, camera_x, camera_y, camera_z;
 	v3 camera_dp;
@@ -264,10 +268,10 @@ typedef struct
 
 	int is_initialized;
 
-    float cubes_height[CUBES_HEIGHT][CUBES_WIDTH];
-    float time;
+    f32 cubes_height[CUBES_HEIGHT][CUBES_WIDTH];
+    f32 time;
 
-	float total_time;
+	f32 total_time;
 	int frame;
 
 	v3 light_p;
@@ -293,7 +297,7 @@ typedef struct
 
 	Render_Context *render_context;
 
-    float text_dx, text_dy;
+    f32 text_dx, text_dy;
 
 	volatile int next_thread_index;
 	volatile int next_tile_index;
@@ -313,11 +317,12 @@ typedef struct
 
 	TimedBlockData timed_blocks_record[PROFILER_RECORD_FRAMES][THREAD_COUNT][MAX_BLOCK_COUNT];
 	TimedBlockStat timed_blocks_stats[MAX_BLOCK_COUNT];
-	float			last_frame_times[PROFILER_RECORD_FRAMES];
+	f32			last_frame_times[PROFILER_RECORD_FRAMES];
 	int	curr_profiler_frame;
 	int profiler_watch_frame;
     int profiler_paused;
-    float   last_profiler_height;
+    f32   last_profiler_height;
+    int profiler_record_count;
 } Game;
 
 
