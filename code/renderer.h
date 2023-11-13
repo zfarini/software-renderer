@@ -5,8 +5,8 @@
 #include "math.h"
 #include <immintrin.h>
 
-#define TILES_PER_WIDTH 16
-#define TILES_PER_HEIGHT 16
+#define TILES_PER_WIDTH 20
+#define TILES_PER_HEIGHT 20
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
 
 

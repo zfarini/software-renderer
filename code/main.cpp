@@ -80,7 +80,7 @@ int main(void)
 #endif
 {
 	int window_width = 800;
-	int window_height = 512;
+	int window_height = 600;
 
 	int backbuffer_width = window_width;
 	int backbuffer_height = window_height;
@@ -109,8 +109,8 @@ int main(void)
 		return 1;
 	}
 
-    SDL_RenderSetLogicalSize(renderer, backbuffer_width, backbuffer_width);
-    SDL_RenderSetIntegerScale(renderer, (SDL_bool)1);
+    SDL_RenderSetLogicalSize(renderer, backbuffer_width, backbuffer_height);
+    //SDL_RenderSetIntegerScale(renderer, (SDL_bool)1);
     SDL_Texture *screen_texture = SDL_CreateTexture(renderer,
                                                     SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING,
                                                     backbuffer_width, backbuffer_height);

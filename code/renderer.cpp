@@ -888,6 +888,7 @@ void render_tile(Render_Context *r, int tile_index)
 		int fill_12 = ((p1.y - p2.y == 0 && p0.y > p1.y) || (p1 + dot(noz(edge12), edge01) * noz(edge12)).x < p0.x);
 
 
+#if 1
     	for (int y = min_y; y < max_y; y++)
     	{
             int count = (max_x - min_x) * SAMPLES_PER_PIXEL;
@@ -920,9 +921,9 @@ void render_tile(Render_Context *r, int tile_index)
 				lane_u32 mask = (w0 > zero) & (w1 > zero) & (w2 > zero);
 #endif
 
-#if 1
                 if (ix + LANE_WIDTH > count)
                 { // TODO: find a better way to do this
+                   
                     alignas(32) uint32_t value[LANE_WIDTH] = {};
 
                     int left = ix + LANE_WIDTH - count;
@@ -933,10 +934,9 @@ void render_tile(Render_Context *r, int tile_index)
                     __m256i blend =  _mm256_load_si256((__m256i *)value);
                     mask.v = _mm256_blendv_epi8(mask.v, LaneU32(0).v, blend);
                 }
-#endif
-
                 if (_mm256_testz_si256(mask.v, mask.v))
                     continue ;
+
                 lane_f32 one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
                 lane_f32 z = LaneF32(1) / one_over_z;
 
@@ -973,6 +973,7 @@ void render_tile(Render_Context *r, int tile_index)
 					w2 *= z * p2.z;
 				}
 
+
 				lane_v3 p = tp0 * w0 + tp1 * w1 + tp2 * w2;
 
 				lane_v3 texture_color = LaneV3(LaneF32(1));
@@ -981,24 +982,11 @@ void render_tile(Render_Context *r, int tile_index)
 
 
 				if (t->texture)
-				{
+                {
                 	lane_v2 uv = uv0 * w0 + uv1 * w1 + uv2 * w2;
-
-					int repeat = 1;
 
 					uv.x -= LaneF32(_mm256_floor_ps(uv.x.v));
 					uv.y -= LaneF32(_mm256_floor_ps(uv.y.v));
-
-#if 0
-					uvx = blend(uvx, uvx + LaneF32(1), uv.x > LaneF32(1));
-					uvx = blend(uvx, uvx - LaneF32(1), uv.x < LaneF32(-1));
-
-					uvy = blend(uvy, uvy + LaneF32(1), uv.y > LaneF32(1));
-					uvy = blend(uvy, uvy - LaneF32(1), uv.y < LaneF32(-1));
-
-					uv.x = uvx;
-					uv.y = uvy;
-#endif
 
 #if !(BILINEAR_FILTERING)
 					lane_u32 tx = LaneU32(uv.x * t->texture->width);
@@ -1125,6 +1113,7 @@ void render_tile(Render_Context *r, int tile_index)
 					else
 						c *= texture_color * t->color.rgb;
 				}
+
 				lane_u32 old_color32 = LaneU32(_mm256_maskload_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask.v));
 
 				lane_v3 old_color = LaneV3((old_color32 >> 24) & 0xFF, (old_color32 >> 16) & 0xFF, (old_color32 >> 8) & 0xFF) / 255;
@@ -1142,6 +1131,100 @@ void render_tile(Render_Context *r, int tile_index)
                 _mm256_maskstore_ps((r->zbuffer + buffer_index), mask.v, z.v);
     	    }
 		}
+#else
+        __m256 zero_256 = _mm256_set1_ps(0);
+        __m256 one_256 = _mm256_set1_ps(1);
+        __m256i ix_offset = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0); // TODO: order?
+       // ix_offset = _mm256_set_epi32(0, 1, 2, 3, 4, 5, 6, 7)
+        __m256i min_x_256 = _mm256_set1_epi32(min_x);
+        __m256  p0_x_256 = _mm256_set1_ps(p0.x);
+        __m256  p0_y_256 = _mm256_set1_ps(p0.y);
+
+        __m256 v_y_256 = _mm256_set1_ps(v.y);
+        __m256 u_x_256 = _mm256_set1_ps(u.x);
+        __m256 neg_v_x_256 = _mm256_set1_ps(-v.x);
+        __m256 neg_u_y_256 = _mm256_set1_ps(-u.y);
+
+        __m256 det_256 = _mm256_set1_ps(det);
+
+        __m256 p0_z_256 = _mm256_set1_ps(p0.z);
+        __m256 p1_z_256 = _mm256_set1_ps(p1.z);
+        __m256 p2_z_256 = _mm256_set1_ps(p2.z);
+
+        int count = (max_x - min_x) * SAMPLES_PER_PIXEL;
+        for (int y = min_y; y < max_y; y++)
+    	{
+            __m256 y_256 = _mm256_set1_ps(y);
+
+            for (int ix = 0; ix < count; ix += LANE_WIDTH)
+    	    {
+                __m256i lane_ix = _mm256_add_epi32(ix_offset, _mm256_set1_epi32(ix));
+
+                __m256i x = _mm256_add_epi32(min_x_256, _mm256_srli_epi32(lane_ix, 2));
+                __m256 x_256 = _mm256_cvtepi32_ps(x);
+
+                // TODO: I don't like this access
+                __m256 pixel_offset_x = r->samples_offset[ix % SAMPLES_PER_PIXEL].x.v;
+                __m256 pixel_offset_y = r->samples_offset[ix % SAMPLES_PER_PIXEL].y.v;
+ //               pixel_offset_x = pixel_offset_y = zero_256;
+
+                __m256 pixel_p_x = _mm256_sub_epi32(_mm256_add_epi32(x_256, pixel_offset_x), p0_x_256);
+                __m256 pixel_p_y = _mm256_sub_epi32(_mm256_add_epi32(y_256, pixel_offset_y), p0_y_256);
+
+                __m256 w1 = _mm256_add_ps(_mm256_mul_ps(pixel_p_x, v_y_256), _mm256_mul_ps(pixel_p_y, neg_v_x_256));
+                __m256 w2 = _mm256_add_ps(_mm256_mul_ps(pixel_p_x, neg_u_y_256), _mm256_mul_ps(pixel_p_y, u_x_256));
+
+                w1 = _mm256_mul_ps(w1, det_256);
+                w2 = _mm256_mul_ps(w2, det_256);
+
+                __m256 w0 = _mm256_sub_ps(one_256, _mm256_add_ps(w1, w2));
+
+                __m256i mask;
+
+                mask = _mm256_castps_si256(_mm256_cmp_ps(w0, zero_256, _CMP_GT_OS));
+                mask = _mm256_and_si256(mask, _mm256_castps_si256(_mm256_cmp_ps(w1, zero_256, _CMP_GT_OS)));
+                mask = _mm256_and_si256(mask, _mm256_castps_si256(_mm256_cmp_ps(w2, zero_256, _CMP_GT_OS)));
+
+#if 0
+                if (ix + LANE_WIDTH > count)
+                {
+                    alignas(32) uint32_t value[LANE_WIDTH] = {};
+
+                    int left = ix + LANE_WIDTH - count;
+
+                    for (int j = 0; j < left; j++)
+                        value[LANE_WIDTH - j - 1] = 0xFFFFFFFF;
+
+                    __m256i blend =  _mm256_load_si256((__m256i *)value);
+                    mask = _mm256_blendv_epi8(mask, _mm256_set1_epi32(0), blend);
+                }
+#endif
+                if (_mm256_testz_si256(mask, mask))
+                    continue ;
+
+                __m256 z = _mm256_rcp_ps( 
+                        _mm256_add_ps(_mm256_mul_ps(p0_z_256, w0),
+                            _mm256_add_ps(_mm256_mul_ps(p1_z_256, w1),
+                                        _mm256_mul_ps(p2_z_256, w2)
+                                )));
+
+                int buffer_index = y * r->buffer_aa.width + (min_x * SAMPLES_PER_PIXEL + ix);
+
+               	__m256 zbuf = _mm256_maskload_ps(r->zbuffer + buffer_index, mask);
+
+               //	mask = _mm256_and_si256(mask, _mm256_castps_si256(_mm256_cmp_ps(z, zbuf, _CMP_LT_OS)));
+
+               	if (_mm256_testz_si256(mask, mask))
+               		continue ;
+
+
+                __m256i color32 = _mm256_set1_epi32(0xff000000);
+            	_mm256_maskstore_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask, color32);
+               	_mm256_maskstore_ps((r->zbuffer + buffer_index), mask, z);
+            }
+        }
+ 
+#endif
 	}
 	{
 		TIMED_BLOCK("samples to pixels");
@@ -1203,8 +1286,9 @@ void render_tile(Render_Context *r, int tile_index)
 									   (c >> 16) & 0xFF,
 									   (c >> 8) & 0xFF) / 255.f;
 				}
+
 				color /= SAMPLES_PER_PIXEL;
-	
+
 				r->buffer.pixels[y * r->buffer.width + x] = 
 		    	   				 ((uint32_t)(sqrtf(color.r) * 255 + 0.5f) << 24) |
 		    	   				 ((uint32_t)(sqrtf(color.g) * 255 + 0.5f) << 16) |

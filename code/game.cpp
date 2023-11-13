@@ -346,7 +346,6 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			game->render_context->char_height_over_width = ((float)font_line_height / font_advance_x);
 
 
-            // TODO: this is propably wrong for non square display?
             game->text_dx = (1.f / 100);
             game->text_dy = game->text_dx * ((float)font_line_height / font_advance_x);
 
@@ -458,7 +457,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 	Render_Context *r = game->render_context;
 
-	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.2, 0.2, 0.2), light_p);
+	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.3, 0.3, 0.3), light_p);
 
 	{
 		float d = 10;
@@ -791,8 +790,6 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 	}
 #endif
-
-	push_2d_text(r, cstring("\t"), V2(0, 0));
 	end_render(r);
 
 #if PROFILING
