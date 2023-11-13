@@ -921,8 +921,10 @@ void render_tile(Render_Context *r, int tile_index)
 				lane_u32 mask = (w0 > zero) & (w1 > zero) & (w2 > zero);
 #endif
 
+#if 1
+                // TODO: !!find a better way to do this
                 if (ix + LANE_WIDTH > count)
-                { // TODO: find a better way to do this
+                { 
                    
                     alignas(32) uint32_t value[LANE_WIDTH] = {};
 
@@ -934,6 +936,7 @@ void render_tile(Render_Context *r, int tile_index)
                     __m256i blend =  _mm256_load_si256((__m256i *)value);
                     mask.v = _mm256_blendv_epi8(mask.v, LaneU32(0).v, blend);
                 }
+#endif
                 if (_mm256_testz_si256(mask.v, mask.v))
                     continue ;
 
@@ -1070,6 +1073,7 @@ void render_tile(Render_Context *r, int tile_index)
 				}
 
 				lane_v3 c;
+#if 1
 				if (t->no_lighthing)
 					c = LaneV3(t->color.rgb) * texture_color;
 				else
@@ -1113,6 +1117,9 @@ void render_tile(Render_Context *r, int tile_index)
 					else
 						c *= texture_color * t->color.rgb;
 				}
+#else
+					c = LaneV3(t->color.rgb) * texture_color;
+#endif
 
 				lane_u32 old_color32 = LaneU32(_mm256_maskload_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask.v));
 
@@ -1151,6 +1158,10 @@ void render_tile(Render_Context *r, int tile_index)
         __m256 p1_z_256 = _mm256_set1_ps(p1.z);
         __m256 p2_z_256 = _mm256_set1_ps(p2.z);
 
+        __m256 one_over_255 = _mm256_set1_ps(1.f / 255);
+
+        
+
         int count = (max_x - min_x) * SAMPLES_PER_PIXEL;
         for (int y = min_y; y < max_y; y++)
     	{
@@ -1168,8 +1179,8 @@ void render_tile(Render_Context *r, int tile_index)
                 __m256 pixel_offset_y = r->samples_offset[ix % SAMPLES_PER_PIXEL].y.v;
  //               pixel_offset_x = pixel_offset_y = zero_256;
 
-                __m256 pixel_p_x = _mm256_sub_epi32(_mm256_add_epi32(x_256, pixel_offset_x), p0_x_256);
-                __m256 pixel_p_y = _mm256_sub_epi32(_mm256_add_epi32(y_256, pixel_offset_y), p0_y_256);
+                __m256 pixel_p_x = _mm256_sub_ps(_mm256_add_ps(x_256, pixel_offset_x), p0_x_256);
+                __m256 pixel_p_y = _mm256_sub_ps(_mm256_add_ps(y_256, pixel_offset_y), p0_y_256);
 
                 __m256 w1 = _mm256_add_ps(_mm256_mul_ps(pixel_p_x, v_y_256), _mm256_mul_ps(pixel_p_y, neg_v_x_256));
                 __m256 w2 = _mm256_add_ps(_mm256_mul_ps(pixel_p_x, neg_u_y_256), _mm256_mul_ps(pixel_p_y, u_x_256));
@@ -1202,23 +1213,95 @@ void render_tile(Render_Context *r, int tile_index)
                 if (_mm256_testz_si256(mask, mask))
                     continue ;
 
-                __m256 z = _mm256_rcp_ps( 
-                        _mm256_add_ps(_mm256_mul_ps(p0_z_256, w0),
-                            _mm256_add_ps(_mm256_mul_ps(p1_z_256, w1),
-                                        _mm256_mul_ps(p2_z_256, w2)
-                                )));
+                __m256 w0_p = _mm256_mul_ps(p0_z_256, w0);
+                __m256 w1_p = _mm256_mul_ps(p1_z_256, w1);
+                __m256 w2_p = _mm256_mul_ps(p2_z_256, w2);
+                __m256 z = _mm256_rcp_ps(_mm256_add_ps(w0_p, _mm256_add_ps(w1_p, w2_p)));
 
                 int buffer_index = y * r->buffer_aa.width + (min_x * SAMPLES_PER_PIXEL + ix);
 
-               	__m256 zbuf = _mm256_maskload_ps(r->zbuffer + buffer_index, mask);
+                if (t->is_2d)
+                    z = _mm256_set1_ps(-1);
+                else
+                {
+                	__m256 zbuf = _mm256_maskload_ps(r->zbuffer + buffer_index, mask);
 
-               //	mask = _mm256_and_si256(mask, _mm256_castps_si256(_mm256_cmp_ps(z, zbuf, _CMP_LT_OS)));
+                	mask = _mm256_and_si256(mask, _mm256_castps_si256(_mm256_cmp_ps(z, zbuf, _CMP_LT_OS)));
 
-               	if (_mm256_testz_si256(mask, mask))
-               		continue ;
+                	if (_mm256_testz_si256(mask, mask))
+                		continue ;
+
+                    w0 = _mm256_mul_ps(z, w0_p);
+                    w1 = _mm256_mul_ps(z, w1_p);
+                    w2 = _mm256_mul_ps(z, w2_p);
+                }
+
+                __m256 tex_r = one_256, tex_g = one_256, tex_b = one_256;
+                __m256 alpha = _mm256_set1_ps(t->color.a);
+
+				if (t->texture)
+                {
+                    __m256 u = _mm256_add_ps(_mm256_mul_ps(w0, _mm256_set1_ps(uv0.x)),
+                                    _mm256_add_ps(_mm256_mul_ps(w1, _mm256_set1_ps(uv1.x)),
+                                    _mm256_mul_ps(w2, _mm256_set1_ps(uv2.x))));
+                    __m256 v = _mm256_add_ps(_mm256_mul_ps(w0, _mm256_set1_ps(uv0.y)),
+                                    _mm256_add_ps(_mm256_mul_ps(w1, _mm256_set1_ps(uv1.y)),
+                                    _mm256_mul_ps(w2, _mm256_set1_ps(uv2.y))));
+
+                    u = _mm256_sub_ps(u, _mm256_floor_ps(u));
+                    v = _mm256_sub_ps(v, _mm256_floor_ps(v));
+
+                    __m256i tx = _mm256_cvttps_epi32(_mm256_mul_ps(u, _mm256_set1_ps(t->texture->width)));
+                    __m256i ty = _mm256_cvttps_epi32(_mm256_mul_ps(v, _mm256_set1_ps(t->texture->height)));
+
+                    tx = _mm256_min_epi32(tx, _mm256_set1_epi32(t->texture->width - 1));
+                    ty = _mm256_min_epi32(ty, _mm256_set1_epi32(t->texture->height - 1));
+                    __m256i idx = _mm256_add_epi32(_mm256_mullo_epi32(ty, _mm256_set1_epi32(t->texture->width)), tx);
+
+                    __m256i color32 = _mm256_mask_i32gather_epi32(_mm256_set1_epi32(0),
+							(int *)t->texture->pixels, idx, mask, sizeof(uint32_t));
+                    tex_r = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(color32, 24), _mm256_set1_epi32(0xFF))), one_over_255);
+                    tex_g = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(color32, 16), _mm256_set1_epi32(0xFF))), one_over_255);
+                    tex_b = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(color32,  8), _mm256_set1_epi32(0xFF))), one_over_255);
+
+                    alpha = _mm256_mul_ps(alpha, _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(color32, _mm256_set1_epi32(0xFF))), one_over_255));
+                }
+
+                __m256 red, green, blue;
+
+      //          if (t->no_lighthing)
+                {
+                    red = _mm256_mul_ps(tex_r, _mm256_set1_ps(t->color.r));
+                    green = _mm256_mul_ps(tex_g, _mm256_set1_ps(t->color.g));
+                    blue = _mm256_mul_ps(tex_b, _mm256_set1_ps(t->color.b));
+
+                }
+                {
+                    __m256i old_color32 = _mm256_maskload_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask);
+
+                    __m256 old_r = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(old_color32, 24), _mm256_set1_epi32(0xFF))), one_over_255);
+                    __m256 old_g = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(old_color32, 24), _mm256_set1_epi32(0xFF))), one_over_255);
+                    __m256 old_b = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(old_color32, 24), _mm256_set1_epi32(0xFF))), one_over_255);
+
+                    red = _mm256_add_ps(old_r, _mm256_mul_ps(alpha, _mm256_sub_ps(red, old_r)));
+                    green = _mm256_add_ps(old_g, _mm256_mul_ps(alpha, _mm256_sub_ps(green, old_g)));
+                    blue = _mm256_add_ps(old_b, _mm256_mul_ps(alpha, _mm256_sub_ps(blue, old_b)));
+                }
 
 
-                __m256i color32 = _mm256_set1_epi32(0xff000000);
+                red = _mm256_min_ps(red, one_256);
+                green = _mm256_min_ps(green, one_256);
+                blue = _mm256_min_ps(blue, one_256);
+
+                red = _mm256_add_ps(_mm256_mul_ps(red, _mm256_set1_ps(255)), _mm256_set1_ps(0.5f));
+                green = _mm256_add_ps(_mm256_mul_ps(green, _mm256_set1_ps(255)), _mm256_set1_ps(0.5f));
+                blue = _mm256_add_ps(_mm256_mul_ps(blue, _mm256_set1_ps(255)), _mm256_set1_ps(0.5f));
+
+                __m256i color32 = _mm256_slli_epi32(_mm256_cvttps_epi32(red), 24);
+
+                color32 = _mm256_or_si256(color32, _mm256_slli_epi32(_mm256_cvttps_epi32(green), 16));
+                color32 = _mm256_or_si256(color32, _mm256_slli_epi32(_mm256_cvttps_epi32(blue), 8));
+
             	_mm256_maskstore_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask, color32);
                	_mm256_maskstore_ps((r->zbuffer + buffer_index), mask, z);
             }
