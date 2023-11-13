@@ -617,8 +617,8 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 				v4 color = V4(h, 0, 0, 1);
 
-				if (h > 1.5)
-					h = 1.5;
+				if (h > 1)
+					h = 1;
 				float max_y = y + frame_time_height;
 
 				v2 min = V2(i * dx, max_y - h * frame_time_height);
@@ -792,6 +792,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 	}
 #endif
 
+	push_2d_text(r, cstring("\t"), V2(0, 0));
 	end_render(r);
 
 #if PROFILING

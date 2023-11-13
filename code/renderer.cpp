@@ -346,7 +346,6 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 			continue;
 
 
-
 		assert(r->triangle_count < r->max_triangle_count);
 
 		r->triangles[r->triangle_count++] = *t;
@@ -888,6 +887,7 @@ void render_tile(Render_Context *r, int tile_index)
 		int fill_02 = ((p2.y - p0.y == 0 && p1.y > p2.y) || (p0 + dot(noz(edge02), edge01) * noz(edge02)).x < p1.x);
 		int fill_12 = ((p1.y - p2.y == 0 && p0.y > p1.y) || (p1 + dot(noz(edge12), edge01) * noz(edge12)).x < p0.x);
 
+
     	for (int y = min_y; y < max_y; y++)
     	{
             int count = (max_x - min_x) * SAMPLES_PER_PIXEL;
@@ -937,7 +937,6 @@ void render_tile(Render_Context *r, int tile_index)
 
                 if (_mm256_testz_si256(mask.v, mask.v))
                     continue ;
-
                 lane_f32 one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
                 lane_f32 z = LaneF32(1) / one_over_z;
 
@@ -1135,7 +1134,7 @@ void render_tile(Render_Context *r, int tile_index)
 				c.x = min(c.x, LaneF32(1));
 				c.y = min(c.y, LaneF32(1));
 				c.z = min(c.z, LaneF32(1));
-				c = c * 255;
+				c = c * 255 + LaneV3(LaneF32(0.5f));
 
                 lane_u32 color32 = (LaneU32(c.x) << 24) | (LaneU32(c.y) << 16) | (LaneU32(c.z) << 8);
 
@@ -1265,7 +1264,8 @@ void push_2d_rect_outline(Render_Context *r, v2 min, v2 max, v4 color = V4(1, 1,
 void push_2d_text(Render_Context *r, String s, v2 offset, v4 color = V4(1, 1, 1, 1), float scale = 1)
 {
 	float dx = r->game->text_dx * scale;
-	float dy = dx * r->char_height_over_width;
+	float dy = r->game->text_dy * scale;
+
 	float xoffset = 0;
 	float yoffset = 0;
 	for (int i = 0; i < s.len; i++)

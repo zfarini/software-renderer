@@ -80,7 +80,7 @@ int main(void)
 #endif
 {
 	int window_width = 800;
-	int window_height = 800;
+	int window_height = 512;
 
 	int backbuffer_width = window_width;
 	int backbuffer_height = window_height;
@@ -249,7 +249,7 @@ int main(void)
 
 		{
 			char s[128];
-			snprintf(s, sizeof(s), "%.2fms %.2fms", game->last_frame_time, game->total_time / (game->frame + 1));
+			snprintf(s, sizeof(s), "%.2fms", game->last_frame_time);
 			SDL_SetWindowTitle(window, s);
 		}
 
