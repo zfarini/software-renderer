@@ -176,7 +176,7 @@ void get_tile_clip_bounds(Render_Context *r, int index, v2 &min_clip, v2 &max_cl
 	max_clip = V2(max_x, max_y);
 }
 
-void push_triangle(Render_Context *r, Triangle *triangle)
+void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
 {
 	TIMED_FUNCTION();
 
@@ -190,100 +190,97 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 	triangles[0].p1 = world_to_camera(r, triangle->p1);
 	triangles[0].p2 = world_to_camera(r, triangle->p2);
 
-#if 1
 	if (!triangle->is_2d)
 	{
 		v3 n = cross(triangles[0].p1 - triangles[0].p0, triangles[0].p2 - triangles[0].p0);
 
 		// TODO: why does this work
-		if (dot(n, triangles[0].p0) > 0)
+		if (backface_cull && dot(n, triangles[0].p0) > 0)
 			return ;
-	}
-#endif
-
-	for (int i = 0; i < ARRAY_LENGTH(r->clip_planes) && triangle_count && !triangle->is_2d; i++)
-	{
-		int new_triangle_count = 0;
-		for (int j = 0; j < triangle_count; j++)
+		for (int i = 0; i < ARRAY_LENGTH(r->clip_planes) && triangle_count; i++)
 		{
-
-			Triangle *triangle = &triangles[j];
-
-			v3 cp0 = triangle->p0, cp1 = triangle->p1, cp2 = triangle->p2;
-
-			int d0 = -dot(cp0, r->clip_planes[i].normal) > r->clip_planes[i].d;
-			int d1 = -dot(cp1, r->clip_planes[i].normal) > r->clip_planes[i].d;
-			int d2 = -dot(cp2, r->clip_planes[i].normal) > r->clip_planes[i].d;
-	
-			if (d0 + d1 + d2 == 0)
-				new_triangles[new_triangle_count++] = *triangle;
-			else if (d0 + d1 + d2 != 3)
+			int new_triangle_count = 0;
+			for (int j = 0; j < triangle_count; j++)
 			{
-				/*
-					p0        p1
 
-					---x0----x1-- (clip plane)
-							
-					 	   p2
-				*/
-				int clip_up = (d0 + d1 + d2) == 2;
+				Triangle *triangle = &triangles[j];
 
-				v3 p0 = cp0, p1 = cp1, p2 = cp2;
-				v2 uv0 = triangle->uv0, uv1 = triangle->uv1, uv2 = triangle->uv2;
-				v3 n0 = triangle->n0, n1 = triangle->n1, n2 = triangle->n2;
+				v3 cp0 = triangle->p0, cp1 = triangle->p1, cp2 = triangle->p2;
 
-				int swp = 0;
-
-				if ((clip_up && !d0) || (!clip_up && d0))
-					swap(p0, p2), swap(uv0, uv2), swap(n0, n2), swp = 1;
-				else if ((clip_up && !d1) || (!clip_up && d1))
-					swap(p1, p2), swap(uv1, uv2), swap(n1, n2), swp = 2;
-
-				v3 x0 = p2 + ((-r->clip_planes[i].d - dot(p2, r->clip_planes[i].normal)) / dot(p0 - p2, r->clip_planes[i].normal)) * (p0 - p2);
-				v3 x1 = p2 + ((-r->clip_planes[i].d - dot(p2, r->clip_planes[i].normal)) / dot(p1 - p2, r->clip_planes[i].normal)) * (p1 - p2);
-
-				f32 t0 = length(x0 - p0) / length(p2 - p0);
-				f32 t1 = length(x1 - p1) / length(p2 - p1);
-
-				v2 x0_uv = lerp(uv0, t0, uv2);
-				v2 x1_uv = lerp(uv1, t1, uv2);
-				
-				v3 x0_n = noz(lerp(n0, t0, n2));
-				v3 x1_n = noz(lerp(n1, t1, n2));
-
-
-				if (clip_up)
+				int d0 = -dot(cp0, r->clip_planes[i].normal) > r->clip_planes[i].d;
+				int d1 = -dot(cp1, r->clip_planes[i].normal) > r->clip_planes[i].d;
+				int d2 = -dot(cp2, r->clip_planes[i].normal) > r->clip_planes[i].d;
+		
+				if (d0 + d1 + d2 == 0)
+					new_triangles[new_triangle_count++] = *triangle;
+				else if (d0 + d1 + d2 != 3)
 				{
-					new_triangles[new_triangle_count++] = Triangle{.p0 = x0, .p1 = x1, .p2 = p2,
-							.uv0 = x0_uv, .uv1 = x1_uv, .uv2 = uv2,
-							.n0 = x0_n, .n1 = x1_n, .n2 = n2};
-				}
-				else
-				{
-					new_triangles[new_triangle_count++] = {.p0 = p0, .p1 = p1, .p2 = x0,
-							.uv0 = uv0, .uv1 = uv1, .uv2 = x0_uv,
-							.n0 = n0, .n1 = n1, .n2 = x0_n};
-					new_triangles[new_triangle_count++] = {.p0 = p1, .p1 = x1, .p2 = x0,
-							.uv0 = uv1, .uv1 = x1_uv, .uv2 = x0_uv,
-							.n0 = n1, .n1 = x1_n, .n2 = x0_n};
-				}
+					/*
+						p0        p1
 
-				for (int k = 0; k < 2 - clip_up; k++)
-				{
-					Triangle *t = &new_triangles[new_triangle_count - k - 1];
-					f32 d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
-					if (d < 0)
+						---x0----x1-- (clip plane)
+								
+						 	   p2
+					*/
+					int clip_up = (d0 + d1 + d2) == 2;
+
+					v3 p0 = cp0, p1 = cp1, p2 = cp2;
+					v2 uv0 = triangle->uv0, uv1 = triangle->uv1, uv2 = triangle->uv2;
+					v3 n0 = triangle->n0, n1 = triangle->n1, n2 = triangle->n2;
+
+					int swp = 0;
+
+					if ((clip_up && !d0) || (!clip_up && d0))
+						swap(p0, p2), swap(uv0, uv2), swap(n0, n2), swp = 1;
+					else if ((clip_up && !d1) || (!clip_up && d1))
+						swap(p1, p2), swap(uv1, uv2), swap(n1, n2), swp = 2;
+
+					v3 x0 = p2 + ((-r->clip_planes[i].d - dot(p2, r->clip_planes[i].normal)) / dot(p0 - p2, r->clip_planes[i].normal)) * (p0 - p2);
+					v3 x1 = p2 + ((-r->clip_planes[i].d - dot(p2, r->clip_planes[i].normal)) / dot(p1 - p2, r->clip_planes[i].normal)) * (p1 - p2);
+
+					f32 t0 = length(x0 - p0) / length(p2 - p0);
+					f32 t1 = length(x1 - p1) / length(p2 - p1);
+
+					v2 x0_uv = lerp(uv0, t0, uv2);
+					v2 x1_uv = lerp(uv1, t1, uv2);
+					
+					v3 x0_n = noz(lerp(n0, t0, n2));
+					v3 x1_n = noz(lerp(n1, t1, n2));
+
+
+					if (clip_up)
 					{
-						swap(t->p1, t->p2);
-						swap(t->uv1, t->uv2);
-						swap(t->n1, t->n2);
+						new_triangles[new_triangle_count++] = Triangle{.p0 = x0, .p1 = x1, .p2 = p2,
+								.uv0 = x0_uv, .uv1 = x1_uv, .uv2 = uv2,
+								.n0 = x0_n, .n1 = x1_n, .n2 = n2};
+					}
+					else
+					{
+						new_triangles[new_triangle_count++] = {.p0 = p0, .p1 = p1, .p2 = x0,
+								.uv0 = uv0, .uv1 = uv1, .uv2 = x0_uv,
+								.n0 = n0, .n1 = n1, .n2 = x0_n};
+						new_triangles[new_triangle_count++] = {.p0 = p1, .p1 = x1, .p2 = x0,
+								.uv0 = uv1, .uv1 = x1_uv, .uv2 = x0_uv,
+								.n0 = n1, .n1 = x1_n, .n2 = x0_n};
+					}
+
+					for (int k = 0; k < 2 - clip_up; k++)
+					{
+						Triangle *t = &new_triangles[new_triangle_count - k - 1];
+						f32 d = dot(cross(cp1 - cp0, cp2 - cp0), cross(t->p1 - t->p0, t->p2 - t->p0));
+						if (d < 0)
+						{
+							swap(t->p1, t->p2);
+							swap(t->uv1, t->uv2);
+							swap(t->n1, t->n2);
+						}
 					}
 				}
 			}
+			triangle_count = new_triangle_count;
+			for (int i = 0; i < new_triangle_count; i++)
+				triangles[i] = new_triangles[i];
 		}
-		triangle_count = new_triangle_count;
-		for (int i = 0; i < new_triangle_count; i++)
-			triangles[i] = new_triangles[i];
 	}
 
 	for (int i = 0; i < triangle_count; i++)
@@ -413,7 +410,7 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
         {p03, p02, p12, top}, {p03, p12, p13, top}, // up
         {p00, p11, p01, top, 1}, {p00, p10, p11, top, 1}, // down
     };
-
+	
     for (int i = 0; i < ARRAY_LENGTH(triangles); i++)
 	{
 
@@ -425,7 +422,7 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
 		if (triangles[i].flip_uv)
 			swap(uv1, uv2);
 
-        Triangle t;
+        Triangle t = {};
 
         t.p0 = triangles[i].p0;
         t.p1 = triangles[i].p1;
@@ -458,26 +455,70 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
 
 }
 
+// TODO: better clipping
+void clip_line_point(int &p0_x, int &p0_y, int p1_x, int p1_y, int w, int h)
+{
+	if (p0_x < 0)
+	{
+		p0_y += (-(f32)p0_x / (p1_x - p0_x)) * (p1_y - p0_y);
+		p0_x = 0;
+	}
+	if (p0_x >= w)
+	{
+		p0_y += ((f32)(w - 1 - p0_x) / (p1_x - p0_x)) * (p1_y - p0_y);
+		p0_x = w - 1;
+	}
+	if (p0_y < 0)
+	{
+		p0_x += (-(f32)p0_y / (p1_y - p0_y)) * (p1_x - p0_x);
+		p0_y = 0;
+	}
+	if (p0_y >= h)
+	{
+		p0_x += ((f32)(h - 1 - p0_y) / (p1_y - p0_y)) * (p1_x - p0_x);
+		p0_y = h - 1;
+	}
+	if (p0_x < 0) p0_x = 0;
+	if (p0_y < 0) p0_y = 0;
+	if (p0_x >= w) p0_x = w - 1;
+	if (p0_y >= h) p0_y = h - 1;
+}
+
 void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 {
 #if 1
-    f32 thickness = 0.01f;
+    f32 thickness = 0.003f;
 
-    v3 radius = V3(thickness, thickness, length(p1 - p0) * 0.5f);
+	v3 camera = r->camera_rotation * V3(0, 0, -1);
+	v3 line_dir = noz(p1 - p0);
+
+	// TODO: check this
+	if (fabsf(dot(camera, line_dir)) >= 0.99)
+		camera = r->camera_rotation * V3(1, 0, 0);
+
+	v3 u = noz(cross(camera, line_dir));
+
+	Triangle t = {};
+
+	t.no_lighthing = 1;
+	t.color = color;
+	{
+		t.p0 = p0 - thickness * u;
+		t.p1 = p0 + thickness * u;
+		t.p2 = p1 + thickness * u;
+		push_triangle(r, &t, 0);
+	}
+	{
+		t.p0 = p0 - thickness * u;
+		t.p1 = p1 + thickness * u;
+		t.p2 = p1 - thickness * u;
+		push_triangle(r, &t, 0);
+	}
 
 
-	v3 w = noz(p1 - p0);
-
-	v3 up = V3(0, 0, 1);
-
-    if (fabsf(dot(up, w)) > 0.9)
-        up = V3(0, 1, 0);
-
-	v3 u = noz(cross(up, w));
-	v3 v = noz(cross(w, u));
-
-	push_cube(r, p0 + (p1 - p0) * 0.5f, u, v, w, radius, color, 0, 0, 1);
 #else
+	// TODO: better line drawing
+	//
 	p0 = world_to_camera(r, p0);
 	p1 = world_to_camera(r, p1);
 	// clip
@@ -494,96 +535,75 @@ void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 	p0 = prespective_projection(r, p0);
 	p1 = prespective_projection(r, p1);
 
+	p0.x *= SAMPLES_PER_PIXEL_DIM;
+	p0.y *= SAMPLES_PER_PIXEL_DIM;
+	p1.x *= SAMPLES_PER_PIXEL_DIM;
+	p1.y *= SAMPLES_PER_PIXEL_DIM;
+
 	uint32_t color32 = color_v4_to_u32(color);
 
-	f32 line_length = length(p1.xy - p0.xy);
 
 	v2 p0_v2 = V2(p0.x, p0.y);
 
-	v2 perp = noz(V2(-(p1.y - p0.y), p1.x - p0.x));
 
-	int p0_x = p0.x;
-	int p0_y = p0.y;
-	int p1_x = p1.x;
-	int p1_y = p1.y;
+	int p0_x = p0.x + 0.5f;
+	int p0_y = p0.y + 0.5f;
+	int p1_x = p1.x + 0.5f;
+	int p1_y = p1.y + 0.5f;
 
-	// TODO: better clipping and also clip p1
-	if (p0_x < 0)
-	{
-		if (p1_x < 0) return ;
+	v2 perp = noz(V2(-(p1_y - p0_y), p1_x - p0_x));
 
-		f32 t = -(f32)p0_x / (p1_x - p0_x);
+	int w = r->buffer.width * SAMPLES_PER_PIXEL_DIM;
+	int h = r->buffer.height * SAMPLES_PER_PIXEL_DIM;
 
-		p0_x = 0;
-		p0_y += t * (p1_y - p0_y);
-	}
-	if (p0_x >= r->buffer.width)
-	{
-		if (p1_x >= r->buffer.width) return ;
-		f32 t = (f32)(r->buffer.width - 1 - p0_x) / (p1_x - p0_x);
+	if ((p0_x < 0 || p0_x >= w  || p0_y < 0 || p0_y >= h)
+		&& (p1_x < 0 || p1_y >= w || p1_y < 0 || p1_y >= h))
+		return ;
+	//clip_line_point(p0_x, p0_y, p1_x, p1_y, w, h);
+	//clip_line_point(p1_x, p1_y, p0_x, p0_y, w, h);
 
-		p0_x = r->buffer.width - 1;
-		p0_y += t * (p1_y - p0_y);
-	}
-	if (p0_y < 0)
-	{
-		if (p1_y < 0) return ;
+	int dx = p1_x > p0_x ? 1 : -1;
+	int dy = p1_y > p0_y ? 1 : -1;
 
-		f32 t = -(f32)p0_y / (p1_y - p0_y);
+	int p_x = p0_x;
+	int p_y = p0_y;
 
-		p0_y = 0;
-		p0_x += t * (p1_x - p0_x);
-	}
-	if (p0_y >= r->buffer.height)
-	{
-		if (p1_y >= r->buffer.height) return ;
-		f32 t = (f32)(r->buffer.height - 1 - p0_y) / (p1_y - p0_y);
+	f32 line_length = length(p1.xy - p0.xy);
+	v2 line_dir = noz(p1.xy - p0.xy);
 
-		p0_y = r->buffer.height - 1;
-		p0_x += t * (p1_x - p0_x);
-	}
-
-	int dx = p1.x - p0.x > 0 ? 1 : -1;
-	int dy = p1.y - p0.y > 0 ? 1 : -1;
-
-	int p_x = p0.x;
-	int p_y = p0.y;
-
-	// !!!!!!!!!!!!!!TODO: there is a bug with z calculation, check with sphere 
-	//
-	int max_iterations = (r->buffer.width + r->buffer.height) * 2;
+	int max_iterations = (w + h) * 2;
 	while (max_iterations--)
 	{
-
 		// TODO: check this
-		f32 one_over_z = lerp(p0.z, length(V2(p_x, p_y) - p0_v2) / line_length, p1.z);
+		f32 one_over_z = lerp(p0.z, dot(V2(p_x, p_y) - p0_v2, line_dir) / line_length, p1.z);
 		f32 p_z = 1.f / one_over_z;
 
-		// TODO: do we really have to do this?
-		if (!(p_x >= 0 && p_x < r->buffer.width && p_y >= 0 && p_y < r->buffer.height))
-			break ;
-		for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
 		{
-			int i = p_y * r->buffer_aa.width + p_x * SAMPLES_PER_PIXEL + sample;
+			int y = p_y / SAMPLES_PER_PIXEL_DIM;
+			int x = p_x / SAMPLES_PER_PIXEL_DIM;
+			int sample = (p_y % SAMPLES_PER_PIXEL_DIM) * SAMPLES_PER_PIXEL_DIM + p_x % SAMPLES_PER_PIXEL_DIM;
+			int i = y * r->buffer_aa.width + x * SAMPLES_PER_PIXEL + sample;
 
+			//assert(x >= 0 && x < r->buffer.width);
+		   	//assert(y >= 0 && y < r->buffer.height);
+			//assert(sample >= 0 && sample < SAMPLES_PER_PIXEL);
+			
+			if (x >= 0 && x < r->buffer.width && y >= 0 && y < r->buffer.height)
 			if (p_z < r->zbuffer[i])
 			{
 				r->zbuffer[i] = p_z;
 				r->buffer_aa.pixels[i] = color32;
 			}
 		}
-		// consider (p_x + dx, py) and (p_x, py + dy)	
-		f32 d0 = fabsf(dot(perp, V2(p_x + dx, p_y) - p0_v2));
-		f32 d1 = fabsf(dot(perp, V2(p_x, p_y + dy) - p0_v2));
 
-		// TODO: update z in here?
+		f32 d0 = fabsf(dot(perp, V2(p_x + dx, p_y) - V2(p0_x, p0_y)));
+		f32 d1 = fabsf(dot(perp, V2(p_x, p_y + dy) - V2(p0_x, p0_y)));
+
 		if (d0 < d1)
 			p_x += dx;
 		else
 			p_y += dy;
 
-		//if (p_x == p1_x && p_y == p1_y)
-		//	break ;
 		if (abs(p_x - p0_x) > abs(p1_x - p0_x) || abs(p_y - p0_y) > abs(p1_y - p0_y))
 			break ;
 	}
@@ -764,29 +784,30 @@ void push_mesh(Render_Context *r, Mesh *mesh, v3 position, v3 scale = V3(1, 1, 1
 
         t.color = color;
 
-       push_triangle(r, &t);
+		push_triangle(r, &t);
 
 		v3 c = (t.p0 + t.p1 + t.p2) / 3.f;
 		v3 normal = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
 
-		v3 nc = (normal + V3(1, 1, 1)) * 0.5f;
-		v3 nc0 = (t.n0 + V3(1, 1, 1)) * 0.5f;
-		v3 nc1 = (t.n1 + V3(1, 1, 1)) * 0.5f;
-		v3 nc2 = (t.n2 + V3(1, 1, 1)) * 0.5f;
+
+		v4 nc = V4((normal + V3(1, 1, 1)) * 0.5f, 1);
+		v4 nc0 = V4((t.n0 + V3(1, 1, 1)) * 0.5f, 1);
+		v4 nc1 = V4((t.n1 + V3(1, 1, 1)) * 0.5f, 1);
+		v4 nc2 = V4((t.n2 + V3(1, 1, 1)) * 0.5f, 1);
 
         min_box = min(min_box, min(min(t.p0, t.p1), t.p2));
         max_box = max(max_box, max(max(t.p0, t.p1), t.p2));
 		//if (i % 2)
 		{
-	//		push_line(r, t.p0, t.p0 + t.n0 * 0.1f, nc0);
-	//		push_line(r, t.p1, t.p1 + t.n1 * 0.1f, nc1);
-	//		push_line(r, t.p2, t.p2 + t.n2 * 0.1f, nc2);
+			//push_line(r, t.p0, t.p0 + t.n0 * 0.1f, nc0);
+			//push_line(r, t.p1, t.p1 + t.n1 * 0.1f, nc1);
+			//push_line(r, t.p2, t.p2 + t.n2 * 0.1f, nc2);
 
-	//		push_line(r, c, c + normal * 0.1f, nc);
+			push_line(r, c, c + normal * 0.1f, nc);
 
-			//push_line(r, t.p0, t.p1, color);
-		//	push_line(r, t.p0, t.p2, color);
-		//	push_line(r, t.p1, t.p2, color);
+		//push_line(r, t.p0, t.p1, color);
+		//push_line(r, t.p0, t.p2, color);
+		//push_line(r, t.p1, t.p2, color);
 		}
     }
  //   push_box_outline(r, (min_box + max_box) * 0.5f, (max_box - min_box) * 0.5f);
@@ -956,7 +977,7 @@ void render_tile(Render_Context *r, int tile_index)
                			continue ;
 				}
 
-				if (render_zbuffer && !t->no_lighthing)
+				if (render_zbuffer && !t->is_2d)
 				{
 
 					f32_8x c =  (z / LaneF32(r->far_clip_plane));
@@ -1387,23 +1408,23 @@ void end_render(Render_Context *r)
 {
 	for (int i = 0; i < r->triangle_2d_count; i++)
 		push_triangle(r, &r->triangles_2d[i]);
-#if 1
+#if THREADS
 	__sync_synchronize();
     r->game->tiles_finished = 0;
-	__sync_lock_test_and_set(&r->game->next_tile_index, 0);
+	atomic_store(&r->game->next_tile_index, 0);
 
 	while (1)
 	{
-		int tile = __sync_fetch_and_add(&r->game->next_tile_index, 1);	
+		int tile = atomic_fetch_and_add(&r->game->next_tile_index, 1);	
 
 		if (tile >= TILES_COUNT)
 			break ;
 		render_tile(r, tile);
-         __sync_fetch_and_add(&r->game->tiles_finished, 1);	
+        atomic_fetch_and_add(&r->game->tiles_finished, 1);	
 	}
 	while (1)
 	{
-        if (__sync_fetch_and_add(&r->game->tiles_finished, 0) == TILES_COUNT)
+        if (atomic_fetch_and_add(&r->game->tiles_finished, 0) == TILES_COUNT)
             break ;
 		//usleep(100);
 	}

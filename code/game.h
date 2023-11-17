@@ -33,16 +33,25 @@ typedef int b32;
 #define DT (1.f / 60)
 #define PI 3.1415926535897932385
 #define DEG_TO_RAD (PI / 180.0)
-#define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(*(arr)))
+#define ARRAY_LENGTH(arr) ((int)(sizeof(arr) / sizeof(*(arr))))
+
+#define atomic_add_and_fetch(ptr, value) __sync_add_and_fetch(ptr, value)
+#define atomic_fetch_and_add(ptr, value) __sync_fetch_and_add(ptr, value)
+#define atomic_bool_compare_and_swap(ptr, expected, value) __sync_bool_compare_and_swap(ptr, expected, value)
+#define atomic_store(ptr, value) __sync_lock_test_and_set(ptr, value)
+
 
 #include "math.h"
 #include "simd.h"
 
 #define THREADS 1
+#ifdef __APPLE__
+#define CORE_COUNT (4)
+#else
 #define CORE_COUNT (8)
+#endif
+
 #define THREAD_COUNT CORE_COUNT
-#define CUBES_WIDTH 1
-#define CUBES_HEIGHT 1
 
 #define KILOBYTES(x) (x * 1024)
 #define MEGABYTES(x) (KILOBYTES(x) * 1024ULL)
@@ -196,9 +205,7 @@ typedef struct
     // computed
 	v3 screen_p0, screen_p1, screen_p2;
 	int min_x, min_y, max_x, max_y;
-
 } Triangle;
-
 
 typedef struct
 {
@@ -208,8 +215,6 @@ typedef struct
     v3 position;
     v3 scale;
 } Mesh;
-
-
 
 struct GameMemory
 {
@@ -268,7 +273,6 @@ typedef struct
 
 	int is_initialized;
 
-    f32 cubes_height[CUBES_HEIGHT][CUBES_WIDTH];
     f32 time;
 
 	f32 total_time;

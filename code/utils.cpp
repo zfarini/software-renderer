@@ -1,24 +1,12 @@
 #include "game.h"
 
-void swap(f32 &a, f32 &b)
+template<typename T>
+void swap(T &a, T &b)
 {
-	f32 t = a;
+	T temp = a;
 
 	a = b;
-	b = t;
-}
-
-void swap(v3 &a, v3 &b)
-{
-	swap(a.x, b.x);
-	swap(a.y, b.y);
-	swap(a.z, b.z);
-}
-
-void swap(v2 &a, v2 &b)
-{
-	swap(a.x, b.x);
-	swap(a.y, b.y);
+	b = temp;
 }
 
 char *read_entire_file(Arena *arena, const char *filename)

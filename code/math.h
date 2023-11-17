@@ -213,6 +213,11 @@ internal v2 operator*(v2 a, v2 b)
     return {a.x * b.x, a.y * b.y};
 }
 
+internal v2 operator/(v2 a, v2 b)
+{
+    return {a.x / b.x, a.y / b.y};
+}
+
 internal v2 operator*(v2 a, float b)
 {
     return {a.x * b, a.y * b};

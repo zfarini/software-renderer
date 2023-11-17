@@ -88,11 +88,16 @@ int main(void)
 	assert(backbuffer_width  % TILES_PER_WIDTH == 0);
 	assert(backbuffer_height % TILES_PER_HEIGHT == 0);
 
+	assert(((backbuffer_width / TILES_PER_WIDTH) * sizeof(uint32_t)) % 64 == 0);
+
     if (SDL_Init(SDL_INIT_VIDEO))
 	{
 		fprintf(stderr, "SDL FAILURE: %s\n", SDL_GetError());
 		return 1;
 	}
+
+
+	printf("Core count: %d\n", SDL_GetCPUCount());
 
     SDL_Window *window = SDL_CreateWindow("game", 0, 0,
                                           window_width, window_height, SDL_WINDOW_SHOWN);

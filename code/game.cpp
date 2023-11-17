@@ -204,13 +204,12 @@ extern "C" void *game_thread_work(void *data)
 #if 1
 	Game *game = (Game *)data;
 
-	g_thread_info.id = __sync_add_and_fetch(&game->next_thread_index, 1);
+	g_thread_info.id = atomic_add_and_fetch(&game->next_thread_index, 1);
 	//printf("lanched %d %d\n", g_thread_info.id, g_thread_info.timed_blocks_stack_count);
 
-	while (!game->thread_kill_yourself)
+	while (1)//!game->thread_kill_yourself)
 	{
-		int tile = __sync_fetch_and_add(&game->next_tile_index, 1);
-
+		int tile = atomic_fetch_and_add(&game->next_tile_index, 1);
 
 		if (tile >= TILES_COUNT)
 		{
@@ -218,11 +217,11 @@ extern "C" void *game_thread_work(void *data)
 			//
 			// NOTE: this is done to avoid overflowing the tile index when we 
 			// are pausing
-			__sync_bool_compare_and_swap(&game->next_tile_index, tile, TILES_COUNT);
+			atomic_bool_compare_and_swap(&game->next_tile_index, tile, TILES_COUNT);
 			continue;
 		}
 		render_tile(game->render_context, tile);
-        __sync_fetch_and_add(&game->tiles_finished, 1);
+        atomic_fetch_and_add(&game->tiles_finished, 1);
 	}
 #endif
 
@@ -282,7 +281,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 
 		game->render_context = push_struct(&game->renderer_arena, Render_Context);
-		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 0.05f, 100, 60, 500000);
+		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 0.05f, 100, 60, 1000000);
 
 		{
 			stbtt_fontinfo info;
@@ -477,7 +476,8 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
     push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
     push_mesh(r, &game->starwars_mesh,V3(0, -1, -5), V3(2, 2, 2));
     push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5));
-	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, -1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
+	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, 1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
+
 
     push_box_outline(r, V3(0, 4, 0), V3(1, 1, 1));
 
