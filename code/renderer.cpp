@@ -506,6 +506,7 @@ void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 		t.p0 = p0 - thickness * u;
 		t.p1 = p0 + thickness * u;
 		t.p2 = p1 + thickness * u;
+		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
 		push_triangle(r, &t, 0);
 	}
 	{
@@ -514,8 +515,6 @@ void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 		t.p2 = p1 - thickness * u;
 		push_triangle(r, &t, 0);
 	}
-
-
 #else
 	// TODO: better line drawing
 	//
@@ -1095,7 +1094,9 @@ void render_tile(Render_Context *r, int tile_index)
 
 				v3_8x c;
 #if 1
-				if (t->no_lighthing)
+				if (r->game->show_normals && !t->is_2d)
+					c = 0.5f * (w0 * t->n0 + w1 * t->n1 + w2 * t->n2 + LaneV3(LaneF32(1)));
+				else if (t->no_lighthing)
 					c = LaneV3(t->color.rgb) * texture_color;
 				else
 				{
@@ -1108,12 +1109,10 @@ void render_tile(Render_Context *r, int tile_index)
                     v3 light_specular = V3(1, 1, 1);
 
 					v3_8x n = w0 * n0 + w1 * n1 + w2 * n2;
-
+					
                     v3_8x to_light = noz(LaneV3(light_p) - p);
 
 					f32_8x diffuse = max(dot(to_light, n), LaneF32(0));
-
-
                     v3_8x reflected = noz(to_light - 2 * n * dot(to_light, n));
                     
                     f32_8x specular = max(dot(reflected, noz(p)), LaneF32(0));
@@ -1132,10 +1131,7 @@ void render_tile(Render_Context *r, int tile_index)
                                 kd * LaneV3(diffuse) * light_diffuse +
                                 ks * LaneV3(specular) * light_specular);
 
-					if (r->game->show_normals)
-						c = 0.5f * (n + LaneV3(LaneF32(1)));
-					else
-						c *= texture_color * t->color.rgb;
+					c *= texture_color * t->color.rgb;
 				}
 #else
 					c = LaneV3(t->color.rgb) * texture_color;
