@@ -195,8 +195,8 @@ void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
 		v3 n = cross(triangles[0].p1 - triangles[0].p0, triangles[0].p2 - triangles[0].p0);
 
 		// TODO: why does this work
-		if (backface_cull && dot(n, triangles[0].p0) > 0)
-			return ;
+	//	if (backface_cull && dot(n, triangles[0].p0) > 0)
+	//		return ;
 		for (int i = 0; i < ARRAY_LENGTH(r->clip_planes) && triangle_count; i++)
 		{
 			int new_triangle_count = 0;
@@ -381,7 +381,7 @@ void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
 
 void push_line(Render_Context *r, v3 p0, v3 p1, v4 color);
 
-void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, Texture *top = 0, Texture *sides = 0, int no_lighthing = 0)
+void push_cube(Render_Context *r, v3 c, v3 radius, v4 color = V4(1, 1, 1, 1), v3 u = V3(1, 0, 0), v3 v = V3(0, 1, 0), v3 w = V3(0, 0, 1), int no_lighthing = 0)
 {
     u = noz(u) * radius.x;
     v = noz(v) * radius.y;
@@ -400,15 +400,14 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
     struct 
 	{
 		v3 p0, p1, p2;
-		Texture *tex;
 		int flip_uv;
 	}triangles[] = {
-        {p00, p01, p02, sides}, {p00, p02, p03, sides}, // front
-      	{p10, p12, p11, sides, 1}, {p10, p13, p12, sides, 1}, // back
-		{p01, p11, p12, sides}, {p01, p12, p02, sides}, // right
-		{p10, p00, p03, sides}, {p10, p03, p13, sides}, // left
-        {p03, p02, p12, top}, {p03, p12, p13, top}, // up
-        {p00, p11, p01, top, 1}, {p00, p10, p11, top, 1}, // down
+        {p00, p01, p02}, {p00, p02, p03}, // front
+      	{p10, p12, p11, 1}, {p10, p13, p12, 1}, // back
+		{p01, p11, p12}, {p01, p12, p02}, // right
+		{p10, p00, p03}, {p10, p03, p13}, // left
+        {p03, p02, p12}, {p03, p12, p13}, // up
+        {p00, p11, p01, 1}, {p00, p10, p11, 1}, // down
     };
 	
     for (int i = 0; i < ARRAY_LENGTH(triangles); i++)
@@ -437,7 +436,6 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
         t.n1 = normal;
         t.n2 = normal;
 
-        t.texture = triangles[i].tex;
         t.color = color;
 
         push_triangle(r,  &t);
@@ -446,11 +444,6 @@ void push_cube(Render_Context *r, v3 c, v3 u, v3 v, v3 w, v3 radius, v4 color, T
 		//v4 nc = V4((normal + V3(1, 1, 1)) * 0.5f, 1);
 		//v3 c = (t.p0 + t.p1 + t.p2) / 3;
 		//push_line(r, c, c + normal * 0.1f, nc);
-
-		//push_line(r, t.p0, t.p1, color);
-		//push_line(r, t.p1, t.p2, color);
-		//push_line(r, t.p0, t.p2, color);
-
 	}
 
 }
@@ -976,19 +969,21 @@ void render_tile(Render_Context *r, int tile_index)
                			continue ;
 				}
 
+#if 1
 				if (render_zbuffer && !t->is_2d)
 				{
-
 					f32_8x c =  (z / LaneF32(r->far_clip_plane));
 
 					c = min(c, LaneF32(1)) * 255;
 
                		u32_8x color32 = (LaneU32(c) << 24) | (LaneU32(c) << 16) | (LaneU32(c) << 8);
 
+
             		_mm256_maskstore_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask.v, color32.v);
                		_mm256_maskstore_ps((r->zbuffer + buffer_index), mask.v, z.v);
 					continue ;
 				}
+#endif
 				if (!t->is_2d)
 				{
 					w0 *= z * p0.z;

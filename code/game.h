@@ -340,6 +340,12 @@ typedef struct
 	v3 player_dp;
 	float player_z_angle;
 	float player_z_dangle;
+	float race_half_width;
+
+	v3 cubes_p[1000];
+	v3 cubes_radius[1000];
+	int hit[1000];
+	int hit_count;
 
 } Game;
 

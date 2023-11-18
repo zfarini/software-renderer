@@ -50,3 +50,18 @@ String string_dup(Arena *arena, String s)
 	memcpy(res.data, s.data, s.len);
 	return res;
 }
+
+
+unsigned rand_pcg(uint32_t *rng_state)
+{
+    unsigned state = *rng_state;
+    *rng_state = state * 747796405u + 2891336453u;
+    unsigned word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float random_float(float min, float max)
+{
+	static uint32_t rng_state;
+	return min + (rand_pcg(&rng_state) * (1.0 / UINT_MAX)) * (max - min);
+}
