@@ -145,13 +145,16 @@ int main(void)
 	game->window_height = window_height;
 
 	// should happen before creating the threads
-	{
+	
+#ifndef __APPLE__
+    {
 		if (sem_init(&game->threads_semaphore, 0, 0))
 		{
 			perror("sem_init");
 			assert(0);
 		}
 	}
+#endif
 
 	game->framebuffer.pixels = (uint32_t *)malloc(sizeof(uint32_t) * game->framebuffer.width * game->framebuffer.height + CACHE_LINE_SIZE);
 	game->framebuffer.pixels = (uint32_t *)((((uintptr_t)game->framebuffer.pixels + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE) * CACHE_LINE_SIZE);

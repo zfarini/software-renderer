@@ -214,7 +214,10 @@ extern "C" void *game_thread_work(void *data)
 		if (tile >= TILES_COUNT)
 		{
 			// TODO: maybe check out pthread_cond_wait
-			sem_wait(&game->threads_semaphore);
+			
+#ifndef __APPLE__
+            sem_wait(&game->threads_semaphore);
+#endif
 			continue;
 		}
 		render_tile(game->render_context, tile);
@@ -460,7 +463,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.3, 0.3, 0.3), light_p);
 
-#if 0
+#if 1
 	{
 		f32 d = 10;
 		{
@@ -530,6 +533,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 	//}
 
 
+#if 0
 	{
 		v3 player_radius = V3(.3);
 
@@ -609,6 +613,8 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		}
 		push_2d_text(r, V2(0, 0), "hit count: %d", game->hit_count);
 	}
+#endif
+    push_2d_triangle(r, V2(0.2, 0.1), V2(0.5, 0.2), V2(0, 0.5));
     update_profiler_stats(game);
     draw_profiler(game, game_input, r, V2(0, 0), V2(0.7, game->last_profiler_height));
 

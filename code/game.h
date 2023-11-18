@@ -196,30 +196,31 @@ struct Texture
 	uint32_t *pixels;
 };
 
-typedef struct 
+enum TriangleFlags
+{
+    TriangleFlags_NoLighthing = (1 << 0),
+    TriangleFlags_2D = (1 << 1),
+    TriangleFlags_NoBackFaceCulling = (1 << 2),
+};
+
+struct Triangle
 {
 	v3 p0, p1, p2;
 	v2 uv0, uv1, uv2;
-    v3 n0, n1, n2;
-	Texture *texture;
+    v3 n0, n1, n2; // TODO: store only x,y since its normalized?
 	v4 color;
-	int no_lighthing;
-	int is_2d;
-    v2 clip_min;
-    v2 clip_max;
-    // computed
-	v3 screen_p0, screen_p1, screen_p2;
-	int min_x, min_y, max_x, max_y;
-} Triangle;
+	Texture *texture;
+    uint32_t flags;
+};
 
-typedef struct
+struct Mesh
 {
     Triangle *triangles;
     int triangle_count;
     v3 rotation;
     v3 position;
     v3 scale;
-} Mesh;
+};
 
 struct GameMemory
 {

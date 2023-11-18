@@ -176,7 +176,7 @@ void get_tile_clip_bounds(Render_Context *r, int index, v2 &min_clip, v2 &max_cl
 	max_clip = V2(max_x, max_y);
 }
 
-void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
+void push_triangle(Render_Context *r, Triangle *triangle)
 {
 	TIMED_FUNCTION();
 
@@ -186,16 +186,17 @@ void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
 	Triangle new_triangles[(1 << 5)];
 
 	triangles[0] = *triangle;
-	triangles[0].p0 = world_to_camera(r, triangle->p0);
-	triangles[0].p1 = world_to_camera(r, triangle->p1);
-	triangles[0].p2 = world_to_camera(r, triangle->p2);
 
-	if (!triangle->is_2d)
+	if (!(triangle->flags & TriangleFlags_2D))
 	{
+	    triangles[0].p0 = world_to_camera(r, triangle->p0);
+	    triangles[0].p1 = world_to_camera(r, triangle->p1);
+	    triangles[0].p2 = world_to_camera(r, triangle->p2);
+
 		v3 n = cross(triangles[0].p1 - triangles[0].p0, triangles[0].p2 - triangles[0].p0);
 
 		// TODO: why does this work
-	//	if (backface_cull && dot(n, triangles[0].p0) > 0)
+	//	if (!(triangle->flags & TriangleFlags_NoBackFaceCulling) && dot(n, triangles[0].p0) > 0)
 	//		return ;
 		for (int i = 0; i < ARRAY_LENGTH(r->clip_planes) && triangle_count; i++)
 		{
@@ -290,12 +291,11 @@ void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
 		// TODO: this is shit
 		t->texture = triangle->texture;
 		t->color = triangle->color;
-		t->no_lighthing = triangle->no_lighthing;
-		t->is_2d = triangle->is_2d;
+        t->flags = triangle->flags;
 
 		v3 p0, p1, p2;
 
-		if (triangle->is_2d)
+		if (t->flags & TriangleFlags_2D)
 		{
 			p0 = triangle->p0;
 			p1 = triangle->p1;
@@ -306,21 +306,20 @@ void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
 			p0 = prespective_projection(r, t->p0);
 			p1 = prespective_projection(r, t->p1);
 			p2 = prespective_projection(r, t->p2);
+            t->p0 = camera_to_world(r, t->p0);
+            t->p1 = camera_to_world(r, t->p1);
+            t->p2 = camera_to_world(r, t->p2);
 		}
-
 	
 		v2 tmin = {fminf(p0.x, fminf(p1.x, p2.x)), fminf(p0.y, fminf(p1.y, p2.y))};
 		v2 tmax = {fmaxf(p0.x, fmaxf(p1.x, p2.x)), fmaxf(p0.y, fmaxf(p1.y, p2.y))};
-
-		t->screen_p0 = p0;
-		t->screen_p1 = p1;
-		t->screen_p2 = p2;
 	
-		t->min_x = floorf(tmin.x);
-		t->max_x = ceilf(tmax.x);
-		t->min_y = floorf(tmin.y);
-		t->max_y = ceilf(tmax.y);
+		int min_x = floorf(tmin.x);
+		int max_x = ceilf(tmax.x);
+		int min_y = floorf(tmin.y);
+		int max_y = ceilf(tmax.y);
 	
+#if 0
         if (triangle->is_2d)
         {
             v2 clip_min = triangle->clip_min * V2(r->buffer.width, r->buffer.height);
@@ -335,11 +334,12 @@ void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
             if (t->max_y > clip_max.y)
                 t->max_y = clip_max.y;
         }
-		if (t->min_x < 0) t->min_x = 0;
-		if (t->min_y < 0) t->min_y = 0;
-		if (t->max_x > r->buffer.width) t->max_x = r->buffer.width;
-		if (t->max_y > r->buffer.height) t->max_y = r->buffer.height;
-		if (t->min_x >= t->max_x || t->min_y >= t->max_y)
+#endif
+		if (min_x < 0) min_x = 0;
+		if (min_y < 0) min_y = 0;
+		if (max_x > r->buffer.width) max_x = r->buffer.width;
+		if (max_y > r->buffer.height) max_y = r->buffer.height;
+		if (min_x >= max_x || min_y >= max_y)
 			continue;
 
 
@@ -350,10 +350,10 @@ void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
 		const int TILE_WIDTH  = r->buffer.width / TILES_PER_WIDTH;
 		const int TILE_HEIGHT = r->buffer.height / TILES_PER_HEIGHT;
 
-		int min_tile_x = t->min_x / TILE_WIDTH;
-		int min_tile_y = t->min_y / TILE_HEIGHT;
-		int max_tile_x = (t->max_x + TILE_WIDTH - 1) / TILE_WIDTH;
-		int max_tile_y = (t->max_y + TILE_HEIGHT - 1) / TILE_HEIGHT;
+		int min_tile_x = min_x / TILE_WIDTH;
+		int min_tile_y = min_y / TILE_HEIGHT;
+		int max_tile_x = (max_x + TILE_WIDTH - 1) / TILE_WIDTH;
+		int max_tile_y = (max_y + TILE_HEIGHT - 1) / TILE_HEIGHT;
 
 		for (int y = min_tile_y; y < max_tile_y; y++)
 		{
@@ -365,10 +365,10 @@ void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
 	
 				get_tile_clip_bounds(r, j, clip_min, clip_max);
 				
-				int cmin_x = clamp(clip_min.x, clip_max.x, t->min_x);
-				int cmin_y = clamp(clip_min.y, clip_max.y, t->min_y);
-				int cmax_x = clamp(clip_min.x, clip_max.x, t->max_x);
-				int cmax_y = clamp(clip_min.y, clip_max.y, t->max_y);
+				int cmin_x = clamp(clip_min.x, clip_max.x, min_x);
+				int cmin_y = clamp(clip_min.y, clip_max.y, min_y);
+				int cmax_x = clamp(clip_min.x, clip_max.x, max_x);
+				int cmax_y = clamp(clip_min.y, clip_max.y, max_y);
 	
 				if (cmin_x >= cmax_x || cmin_y >= cmax_y)
 					continue;
@@ -381,7 +381,7 @@ void push_triangle(Render_Context *r, Triangle *triangle, int backface_cull = 1)
 
 void push_line(Render_Context *r, v3 p0, v3 p1, v4 color);
 
-void push_cube(Render_Context *r, v3 c, v3 radius, v4 color = V4(1, 1, 1, 1), v3 u = V3(1, 0, 0), v3 v = V3(0, 1, 0), v3 w = V3(0, 0, 1), int no_lighthing = 0)
+void push_cube(Render_Context *r, v3 c, v3 radius, v4 color = V4(1, 1, 1, 1), v3 u = V3(1, 0, 0), v3 v = V3(0, 1, 0), v3 w = V3(0, 0, 1))
 {
     u = noz(u) * radius.x;
     v = noz(v) * radius.y;
@@ -429,7 +429,6 @@ void push_cube(Render_Context *r, v3 c, v3 radius, v4 color = V4(1, 1, 1, 1), v3
         t.uv0 = uv0;
         t.uv1 = uv1;
         t.uv2 = uv2;
-        t.no_lighthing = no_lighthing;
 
         v3 normal = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
         t.n0 = normal;
@@ -493,20 +492,20 @@ void push_line(Render_Context *r, v3 p0, v3 p1, v4 color = V4(1, 1, 1, 1))
 
 	Triangle t = {};
 
-	t.no_lighthing = 1;
+    t.flags = TriangleFlags_NoLighthing | TriangleFlags_NoBackFaceCulling;
 	t.color = color;
 	{
 		t.p0 = p0 - thickness * u;
 		t.p1 = p0 + thickness * u;
 		t.p2 = p1 + thickness * u;
 		t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
-		push_triangle(r, &t, 0);
+		push_triangle(r, &t);
 	}
 	{
 		t.p0 = p0 - thickness * u;
 		t.p1 = p1 + thickness * u;
 		t.p2 = p1 - thickness * u;
-		push_triangle(r, &t, 0);
+		push_triangle(r, &t);
 	}
 #else
 	// TODO: better line drawing
@@ -820,8 +819,8 @@ void push_2d_triangle(Render_Context *r, v2 p0, v2 p1, v2 p2, v4 color = V4(1, 1
 	t.uv0 = uv0;
 	t.uv1 = uv1;
 	t.uv2 = uv2;
-	t.is_2d = 1;
-	t.no_lighthing = 1;
+    t.flags = TriangleFlags_2D;
+#if 0
     t.clip_min = V2(0, 0);
     t.clip_max = V2(1, 1);
     if (r->enable_clip_rect)
@@ -829,6 +828,7 @@ void push_2d_triangle(Render_Context *r, v2 p0, v2 p1, v2 p2, v4 color = V4(1, 1
         t.clip_min = r->clip_rect_min;
         t.clip_max = r->clip_rect_max;
     }
+#endif
 
 	r->triangles_2d[r->triangle_2d_count++] = t;
 }
@@ -847,23 +847,39 @@ void render_tile(Render_Context *r, int tile_index)
 
 	v3 light_p = world_to_camera(r, r->light_p);
 
-	int render_zbuffer = r->game->render_zbuffer;
 
 	for (int j = 0; j < r->triangles_per_tile_count[tile_index]; j++)
 	{
 		Triangle *t = &r->triangles[r->triangles_per_tile[tile_index][j]];
 
+#if 2
+        v3 tp0 = world_to_camera(r, t->p0);
+        v3 tp1 = world_to_camera(r, t->p1);
+        v3 tp2 = world_to_camera(r, t->p2);
+#else
         v3 tp0 = t->p0;
         v3 tp1 = t->p1;
         v3 tp2 = t->p2;
+#endif
 
         v3 n0 = r->camera_inv_rotation * t->n0;
         v3 n1 = r->camera_inv_rotation * t->n1;
         v3 n2 = r->camera_inv_rotation * t->n2;
 
-		v3 p0 = t->screen_p0;
-		v3 p1 = t->screen_p1;
-		v3 p2 = t->screen_p2;
+        v3 p0, p1, p2;
+
+		if (t->flags & TriangleFlags_2D)
+		{
+			p0 = tp0;
+			p1 = tp1;
+			p2 = tp2;
+		}
+		else
+		{
+			p0 = prespective_projection(r, tp0);
+			p1 = prespective_projection(r, tp1);
+			p2 = prespective_projection(r, tp2);
+		}
 
  		v3 u = p1 - p0;
  		v3 v = p2 - p0;
@@ -874,10 +890,13 @@ void render_tile(Render_Context *r, int tile_index)
 		v2 uv1 = t->uv1;
 		v2 uv2 = t->uv2;
 
-		int min_x = t->min_x;
-		int min_y = t->min_y;
-		int max_x = t->max_x;
-		int max_y = t->max_y;
+		v2 tmin = {fminf(p0.x, fminf(p1.x, p2.x)), fminf(p0.y, fminf(p1.y, p2.y))};
+		v2 tmax = {fmaxf(p0.x, fmaxf(p1.x, p2.x)), fmaxf(p0.y, fmaxf(p1.y, p2.y))};
+
+		int min_x = floorf(tmin.x);
+		int max_x = ceilf(tmax.x);
+		int min_y = floorf(tmin.y);
+		int max_y = ceilf(tmax.y);
 
 		if (min_x < clip_min_x) min_x = clip_min_x;
 		if (min_y < clip_min_y) min_y = clip_min_y;
@@ -896,23 +915,53 @@ void render_tile(Render_Context *r, int tile_index)
 
 		// top-left fill rule
 		// TODO: we can propably check the left edge case much easily
-		int fill_01 = ((p1.y - p0.y == 0 && p2.y > p1.y) || (p0 + dot(noz(edge01), edge02) * noz(edge01)).x < p2.x);
-		int fill_02 = ((p2.y - p0.y == 0 && p1.y > p2.y) || (p0 + dot(noz(edge02), edge01) * noz(edge02)).x < p1.x);
-		int fill_12 = ((p1.y - p2.y == 0 && p0.y > p1.y) || (p1 + dot(noz(edge12), edge01) * noz(edge12)).x < p0.x);
+		int fill_01 = ((p1.y - p0.y == 0 && p2.y > p1.y) || (p0 + dot(noz(edge01), edge02) * noz(edge01)).x < p2.x) ? 0xffffffff : 0;
+		int fill_02 = ((p2.y - p0.y == 0 && p1.y > p2.y) || (p0 + dot(noz(edge02), edge01) * noz(edge02)).x < p1.x) ? 0xffffffff : 0;
+		int fill_12 = ((p1.y - p2.y == 0 && p0.y > p1.y) || (p1 + dot(noz(edge12), edge01) * noz(edge12)).x < p0.x) ? 0xffffffff : 0;
 
 
+	    int render_zbuffer = r->game->render_zbuffer && !(t->flags & TriangleFlags_2D);
+        int render_normals = r->game->show_normals && !(t->flags & TriangleFlags_2D);
 #if 1
     	for (int y = min_y; y < max_y; y++)
     	{
-            int count = (max_x - min_x) * SAMPLES_PER_PIXEL;
+            int start_x = min_x;
+
+            
+            // p0y + t * (p1y - p0y) = y
+
+#if 0
+            {
+                float x0 = FLT_MAX, x1 = FLT_MAX, x2 = FLT_MAX;
+
+
+                float Y = y + 0.5f;
+
+                if ((p0.y < Y) != (p1.y < Y))
+                    x0 = p0.x + ((Y - p0.y) / (p1.y - p0.y)) * (p1.x - p0.x);
+                if ((p1.y < Y) != (p2.y < Y))
+                    x1 = p1.x + ((Y - p1.y) / (p2.y - p1.y)) * (p2.x - p1.x);
+                if ((p0.y < Y) != (p2.y < Y))
+                    x2 = p0.x + ((Y - p0.y) / (p2.y - p0.y)) * (p2.x - p0.x);
+                start_x = max(start_x, (int)fminf(x0, fminf(x1, x2)));
+            }
+#endif
+
+            // p0 p1 p2
+            //
+            
+
+            int count = (max_x - start_x) * SAMPLES_PER_PIXEL;
             for (int ix = 0; ix < count; ix += LANE_WIDTH)
     	    {
                 u32_8x lane_ix = LaneU32(0, 1, 2, 3, 4, 5, 6, 7) + LaneU32(ix);
 
-                u32_8x x = LaneU32(min_x) + 
+                u32_8x x = LaneU32(start_x) + 
                         (lane_ix >> 2); // TODO: !!!
 
                 v2_8x pixel_offset = r->samples_offset[ix % SAMPLES_PER_PIXEL];
+
+ //               pixel_offset = LaneV2(LaneF32(.5), LaneF32(.5));
 
                 v2_8x pixel_p = pixel_offset + LaneV2(LaneF32(x), LaneF32(y))
                             - LaneV2(LaneF32(p0.x), LaneF32(p0.y));
@@ -927,18 +976,23 @@ void render_tile(Render_Context *r, int tile_index)
 
 #if 1
 				u32_8x mask = 
-					(w0 > zero | (w0 == zero & LaneU32(fill_12 ? 0xffffffff : 0))) &
-					(w1 > zero | (w1 == zero & LaneU32(fill_02 ? 0xffffffff : 0))) &
-					(w2 > zero | (w2 == zero & LaneU32(fill_01 ? 0xffffffff : 0)));
+					(w0 > zero | (w0 == zero & LaneU32(fill_12))) &
+					(w1 > zero | (w1 == zero & LaneU32(fill_02))) &
+					(w2 > zero | (w2 == zero & LaneU32(fill_01)));
 #else
 				u32_8x mask = (w0 > zero) & (w1 > zero) & (w2 > zero);
 #endif
 
-#if 1
+#if SAMPLES_PER_PIXEL == 4
+                if (ix + LANE_WIDTH > count)
+                {
+                    //assert(ix + LANE_WIDTH - count == 4);
+                    mask = mask & LaneU32(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0, 0, 0);
+                }
+#else
                 // TODO: !!find a better way to do this
                 if (ix + LANE_WIDTH > count)
                 { 
-                   
                     alignas(32) uint32_t value[LANE_WIDTH] = {};
 
                     int left = ix + LANE_WIDTH - count;
@@ -958,7 +1012,7 @@ void render_tile(Render_Context *r, int tile_index)
 
                 int buffer_index = y * r->buffer_aa.width + (min_x * SAMPLES_PER_PIXEL + ix);
 				
-				if (t->is_2d)
+				if (t->flags & TriangleFlags_2D)
 					z = LaneF32(-1);
 				else
 				{
@@ -970,7 +1024,7 @@ void render_tile(Render_Context *r, int tile_index)
 				}
 
 #if 1
-				if (render_zbuffer && !t->is_2d)
+				if (render_zbuffer)
 				{
 					f32_8x c =  (z / LaneF32(r->far_clip_plane));
 
@@ -984,7 +1038,7 @@ void render_tile(Render_Context *r, int tile_index)
 					continue ;
 				}
 #endif
-				if (!t->is_2d)
+				if (!(t->flags & TriangleFlags_2D))
 				{
 					w0 *= z * p0.z;
 					w1 *= z * p1.z;
@@ -1089,9 +1143,9 @@ void render_tile(Render_Context *r, int tile_index)
 
 				v3_8x c;
 #if 1
-				if (r->game->show_normals && !t->is_2d)
+				if (render_normals)
 					c = 0.5f * (w0 * t->n0 + w1 * t->n1 + w2 * t->n2 + LaneV3(LaneF32(1)));
-				else if (t->no_lighthing)
+				else if (t->flags & (TriangleFlags_NoLighthing | TriangleFlags_2D))
 					c = LaneV3(t->color.rgb) * texture_color;
 				else
 				{
@@ -1403,9 +1457,11 @@ void end_render(Render_Context *r)
 	__sync_synchronize();
     r->game->tiles_finished = 0;
 	atomic_store(&r->game->next_tile_index, 0);
+#ifndef __APPLE__
 	// TODO: better way to do this?
-	for (int i = 0; i < THREAD_COUNT - 1; i++)
+    for (int i = 0; i < THREAD_COUNT - 1; i++)
 		sem_post(&r->game->threads_semaphore);
+#endif
 
 	while (1)
 	{
