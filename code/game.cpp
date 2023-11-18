@@ -213,6 +213,7 @@ extern "C" void *game_thread_work(void *data)
 
 		if (tile >= TILES_COUNT)
 		{
+			// TODO: maybe check out pthread_cond_wait
 			sem_wait(&game->threads_semaphore);
 			continue;
 		}
@@ -270,14 +271,12 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
         game->monkey_mesh = load_mesh(&game->assets_arena, "data/monkey.obj");
 		game->african_head_tex = load_texture(&game->assets_arena, "data/african_head.png");
 		game->african_head_mesh = load_mesh(&game->assets_arena, "data/african_head.obj", &game->african_head_tex);
+		game->tree_mesh = load_mesh(&game->assets_arena, "data/tree.obj");
 
 		game->camera_p = (v3){0, 0, 0};
 
-
-
-
 		game->render_context = push_struct(&game->renderer_arena, Render_Context);
-		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 0.05f, 100, 60, 100000);
+		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 0.05f, 100, 90, 200000);
 
 		{
 			stbtt_fontinfo info;
@@ -367,7 +366,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			clear_arena(&game->scratch_arena);
 		}
 		game->is_initialized = 1;
-		game->show_profiler = 1;
+		game->show_profiler = 0;
     }
 	struct timespec time_start, time_end;
 	clock_gettime(CLOCK_MONOTONIC, &time_start);
@@ -435,6 +434,9 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.3, 0.3, 0.3), light_p);
 
+
+
+#if 0
 	{
 		f32 d = 10;
 		{
@@ -467,7 +469,6 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			push_triangle(r, &t);
 		}
 	}
-
 #if 0
 	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.8, 0.8, 0.8, 1));
     push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
@@ -481,11 +482,103 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
     push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5));
 	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, 1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
 #endif
-
-
-
+    push_mesh(r, &game->tree_mesh, V3(-3, 1, -5));
     push_box_outline(r, V3(0, 4, 0), V3(1, 1, 1));
+#endif
 
+
+#if 0
+	for (int i = 0; i < 10000; i++)
+	{
+		float phi = ((double)rand() / RAND_MAX) * PI;
+		float theta = ((double)rand() / RAND_MAX) * PI * 2;
+
+		v3 P = 0.5 * V3(sinf(phi) * cosf(theta), cosf(phi), sinf(phi) * sinf(theta));
+
+		P += V3(0, 1, -1);
+		push_cube(r, P, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, 1), V3(0.005f), V4(1));
+	}
+#endif
+
+	for (int i = 0; i < 30; i++)
+	{
+    	push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5 * (i + 1)));
+	}
+
+	{
+		if (!game->frame)
+		{
+			game->camera_p = V3(0, 1, 0);
+			game->player_p = V3(0, 0, -3);
+		}
+		v3 ddP = {};
+		if (game_input->buttons[SDL_SCANCODE_LEFT].is_down)
+			ddP.x -= 1;
+		if (game_input->buttons[SDL_SCANCODE_RIGHT].is_down)
+			ddP.x += 1;
+
+
+		float ddangle = -ddP.x * 5 - game->player_z_dangle * 5 - game->player_z_angle * 10;
+
+
+		ddP = ddP * 20 - game->player_dp * 4;
+
+
+		float t = DT;
+		game->player_p += 0.5 * t * t * ddP + game->player_dp * t;
+		game->player_dp += t * ddP;
+
+		game->player_z_angle += 0.5 * t * t * ddangle + game->player_z_dangle * t;
+		game->player_z_dangle += t * ddangle;
+
+
+		game->player_z_angle = clamp(-PI / 6, PI / 6, game->player_z_angle);
+
+		{
+			m3x3 rot_mat = z_rotation(game->player_z_angle);
+
+			v3 u = rot_mat * V3(1, 0, 0);
+			v3 v = rot_mat * V3(0, 1, 0);
+			v3 w = rot_mat * V3(0, 0, 1);
+
+			push_cube(r, game->player_p, u, v, w, V3(.3, .3, .3), V4(1, 1, 1, 1));
+ //   		push_mesh(r, &game->cow_mesh, game->player_p, V3(0.5, 0.5, 0.5), V3(0, PI, game->player_z_angle));
+		}
+
+		game->player_p.z -= DT * 8;
+		game->camera_p.z -= DT * 8;
+		{
+			f32 d = 1000;
+			float y = -2;
+
+			Triangle t = {};
+
+			t.color = V4(.6, .6, .6, 1);
+			{
+	
+				t.p0 = V3(-d, y, 0);
+				t.p1 = V3(d, y, 0);
+				t.p2 = V3(d, y, -d);
+				t.uv0 = V2(0, 0);
+				t.uv1 = V2(d, 0);
+				t.uv2 = V2(d, d);
+				t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
+				push_triangle(r, &t);
+			}
+			{
+				Triangle t = {};
+	
+				t.p0 = V3(-d, y, 0);
+				t.p1 = V3(d, y, -d);
+				t.p2 = V3(-d, y, -d);
+				t.uv0 = V2(0, 0);
+				t.uv1 = V2(d, d);
+				t.uv2 = V2(0, d);
+				t.n0 = t.n1 = t.n2 = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
+				push_triangle(r, &t);
+			}
+		}
+	}
     update_profiler_stats(game);
     draw_profiler(game, game_input, r, V2(0, 0), V2(0.7, game->last_profiler_height));
 

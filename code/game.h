@@ -298,6 +298,7 @@ typedef struct
 	Mesh gun_mesh;
 	Mesh african_head_mesh;
 	Mesh map_mesh;
+	Mesh tree_mesh;
 	Texture african_head_tex;
 
     Mesh starwars_animation[116];
@@ -334,6 +335,12 @@ typedef struct
     int profiler_record_count;
 
 	sem_t threads_semaphore;
+
+	v3 player_p;
+	v3 player_dp;
+	float player_z_angle;
+	float player_z_dangle;
+
 } Game;
 
 

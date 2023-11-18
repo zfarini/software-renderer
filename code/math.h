@@ -393,6 +393,11 @@ internal v4 V4(float x, float y, float z, float w)
 	return v4{x, y, z, w};
 }
 
+internal v4 V4(float x)
+{
+	return v4{x, x, x, x};
+}
+
 internal v4 V4(v3 xyz, float w)
 {
 	return v4{xyz.x, xyz.y, xyz.z, w};

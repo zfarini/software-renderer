@@ -6,7 +6,7 @@
 /*   By: zfarini <zfarini@student.1337.ma>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2023/11/13 19:39:30 by zfarini           #+#    #+#             */
-/*   Updated: 2023/11/18 01:08:44 by zfarini          ###   ########.fr       */
+/*   Updated: 2023/11/18 01:49:39 by zfarini          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -100,8 +100,8 @@ void draw_profiler(Game *game, GameInput *game_input, Render_Context *r,
             frame_time /= record_count;
         }
 	
-		snprintf(s, sizeof(s), "%.2fms %dfps %d records", frame_time,
-				(int)(1000.f / frame_time), record_count);
+		snprintf(s, sizeof(s), "%.2fms %dfps %d records %d threads %d tiles", frame_time,
+				(int)(1000.f / frame_time), record_count, THREAD_COUNT, TILES_COUNT);
 		push_2d_text(r, cstring(s), V2(p.x, y));
         y += game->text_dy;
 	}
@@ -113,7 +113,7 @@ void draw_profiler(Game *game, GameInput *game_input, Render_Context *r,
 
 		dx = (dim.x / PROFILER_RECORD_FRAMES) * 0.9;
 
-		f32 h = game->last_frame_times[i] / (1000.f / 30);
+		f32 h = game->last_frame_times[i] / (1000.f / 60);
 
 		v4 color = V4(h, 0, 0, 1);
 

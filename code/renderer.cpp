@@ -802,7 +802,7 @@ void push_mesh(Render_Context *r, Mesh *mesh, v3 position, v3 scale = V3(1, 1, 1
 			//push_line(r, t.p1, t.p1 + t.n1 * 0.1f, nc1);
 			//push_line(r, t.p2, t.p2 + t.n2 * 0.1f, nc2);
 
-			push_line(r, c, c + normal * 0.1f, nc);
+			//push_line(r, c, c + normal * 0.1f, nc);
 
 		//push_line(r, t.p0, t.p1, color);
 		//push_line(r, t.p0, t.p2, color);
