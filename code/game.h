@@ -13,6 +13,9 @@
 #include <assert.h>
 #include <stdalign.h>
 #include <inttypes.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <semaphore.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -44,11 +47,13 @@ typedef int b32;
 #include "math.h"
 #include "simd.h"
 
+#define CACHE_LINE_SIZE 64
+
 #define THREADS 1
 #ifdef __APPLE__
 #define CORE_COUNT (4)
 #else
-#define CORE_COUNT (8)
+#define CORE_COUNT (11)
 #endif
 
 #define THREAD_COUNT CORE_COUNT
@@ -327,6 +332,8 @@ typedef struct
     int profiler_paused;
     f32   last_profiler_height;
     int profiler_record_count;
+
+	sem_t threads_semaphore;
 } Game;
 
 

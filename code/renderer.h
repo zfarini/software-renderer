@@ -6,7 +6,7 @@
 #include <immintrin.h>
 
 #define TILES_PER_WIDTH 25
-#define TILES_PER_HEIGHT 15
+#define TILES_PER_HEIGHT 25
 #define TILES_COUNT (TILES_PER_WIDTH * TILES_PER_HEIGHT)
 
 

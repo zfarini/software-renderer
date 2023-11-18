@@ -21,9 +21,9 @@ Render_Context new_render_context(Arena *arena, Game *game, Texture framebuffer,
 	r.buffer_aa.width = r.buffer.width * SAMPLES_PER_PIXEL;
 	r.buffer_aa.pitch = r.buffer_aa.width;
 	r.buffer_aa.height = r.buffer.height;
-	r.buffer_aa.pixels = push_array(r.arena, uint32_t, r.buffer_aa.width * r.buffer_aa.height, arena_align(32));
+	r.buffer_aa.pixels = push_array(r.arena, uint32_t, r.buffer_aa.width * r.buffer_aa.height, arena_align(CACHE_LINE_SIZE));
 
-	r.zbuffer = push_array(r.arena, f32, r.buffer_aa.width * r.buffer_aa.height, arena_align(32));
+	r.zbuffer = push_array(r.arena, f32, r.buffer_aa.width * r.buffer_aa.height, arena_align(CACHE_LINE_SIZE));
 
 	r.fov = fov;
 	r.near_clip_plane = near_clip_plane;
@@ -1408,6 +1408,9 @@ void end_render(Render_Context *r)
 	__sync_synchronize();
     r->game->tiles_finished = 0;
 	atomic_store(&r->game->next_tile_index, 0);
+	// TODO: better way to do this?
+	for (int i = 0; i < THREAD_COUNT - 1; i++)
+		sem_post(&r->game->threads_semaphore);
 
 	while (1)
 	{

@@ -23,6 +23,7 @@
 #include <pthread.h>
 
 
+
 time_t get_last_write_time(const char *filename)
 {
     time_t result = 0;
@@ -80,7 +81,7 @@ int main(void)
 #endif
 {
 	int window_width = 800;
-	int window_height = 600;
+	int window_height = 800;
 
 	int backbuffer_width = window_width;
 	int backbuffer_height = window_height;
@@ -88,7 +89,7 @@ int main(void)
 	assert(backbuffer_width  % TILES_PER_WIDTH == 0);
 	assert(backbuffer_height % TILES_PER_HEIGHT == 0);
 
-	assert(((backbuffer_width / TILES_PER_WIDTH) * sizeof(uint32_t)) % 64 == 0);
+	assert(((backbuffer_width / TILES_PER_WIDTH) * sizeof(uint32_t)) % CACHE_LINE_SIZE == 0);
 
     if (SDL_Init(SDL_INIT_VIDEO))
 	{
@@ -131,7 +132,7 @@ int main(void)
 	
 	GameMemory game_memory = {};
 
-	game_memory.permanent_storage_size = GIGABYTES(3);
+	game_memory.permanent_storage_size = GIGABYTES(4);
 	game_memory.permanent_storage = calloc(1, game_memory.permanent_storage_size);
 
 	GameInput game_input = {};
@@ -142,6 +143,20 @@ int main(void)
 	game->next_tile_index = TILES_COUNT;
 	game->window_width = window_width;
 	game->window_height = window_height;
+
+	// should happen before creating the threads
+	{
+		if (sem_init(&game->threads_semaphore, 0, 0))
+		{
+			perror("sem_init");
+			assert(0);
+		}
+	}
+
+	game->framebuffer.pixels = (uint32_t *)malloc(sizeof(uint32_t) * game->framebuffer.width * game->framebuffer.height + CACHE_LINE_SIZE);
+	game->framebuffer.pixels = (uint32_t *)((((uintptr_t)game->framebuffer.pixels + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE) * CACHE_LINE_SIZE);
+	assert((uintptr_t)game->framebuffer.pixels % CACHE_LINE_SIZE == 0);
+
 
 #if CODE_RELOADING
 	char *dll_name = get_game_dll_name();
@@ -244,8 +259,8 @@ int main(void)
 			!game_input.buttons[SDL_SCANCODE_SPACE].was_down)
 			SDL_SetRelativeMouseMode((SDL_bool)!SDL_GetRelativeMouseMode());
 			
-		SDL_LockTexture(screen_texture, 0, (void **)(&game->framebuffer.pixels), &game->framebuffer.pitch);
-		assert(game->framebuffer.pitch % 4 == 0);
+		//SDL_LockTexture(screen_texture, 0, (void **)(&game->framebuffer.pixels), &game->framebuffer.pitch);
+		SDL_UpdateTexture(screen_texture, NULL, game->framebuffer.pixels, game->framebuffer.width * 4);
 
 		game_update_and_render(game, &game_memory, &game_input);
 

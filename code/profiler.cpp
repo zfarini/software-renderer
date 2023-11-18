@@ -6,7 +6,7 @@
 /*   By: zfarini <zfarini@student.1337.ma>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2023/11/13 19:39:30 by zfarini           #+#    #+#             */
-/*   Updated: 2023/11/13 20:10:43 by zfarini          ###   ########.fr       */
+/*   Updated: 2023/11/18 01:08:44 by zfarini          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -113,7 +113,7 @@ void draw_profiler(Game *game, GameInput *game_input, Render_Context *r,
 
 		dx = (dim.x / PROFILER_RECORD_FRAMES) * 0.9;
 
-		f32 h = game->last_frame_times[i] / (1000.f / 60);
+		f32 h = game->last_frame_times[i] / (1000.f / 30);
 
 		v4 color = V4(h, 0, 0, 1);
 

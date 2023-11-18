@@ -213,11 +213,7 @@ extern "C" void *game_thread_work(void *data)
 
 		if (tile >= TILES_COUNT)
 		{
-			// TODO: try to avoid this
-			//
-			// NOTE: this is done to avoid overflowing the tile index when we 
-			// are pausing
-			atomic_bool_compare_and_swap(&game->next_tile_index, tile, TILES_COUNT);
+			sem_wait(&game->threads_semaphore);
 			continue;
 		}
 		render_tile(game->render_context, tile);
@@ -239,7 +235,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		init_arena(&game->scratch_arena, &global_arena, MEGABYTES(64));
 		init_arena(&game->permanent_arena, &global_arena, MEGABYTES(64));
 		init_arena(&game->assets_arena, &global_arena, MEGABYTES(512));
-		init_arena(&game->renderer_arena, &global_arena, GIGABYTES(2));
+		init_arena(&game->renderer_arena, &global_arena, GIGABYTES(3));
 
         game->starwars_tex	= load_texture(&game->assets_arena, "data/starwars.png");
 		game->grass_tex		= load_texture(&game->assets_arena, "data/grass.png");
@@ -281,7 +277,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 
 		game->render_context = push_struct(&game->renderer_arena, Render_Context);
-		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 0.05f, 100, 60, 1000000);
+		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 0.05f, 100, 60, 100000);
 
 		{
 			stbtt_fontinfo info;
@@ -472,11 +468,20 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		}
 	}
 
+#if 0
 	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.8, 0.8, 0.8, 1));
     push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
     push_mesh(r, &game->starwars_mesh,V3(0, -1, -5), V3(2, 2, 2));
     push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5));
 	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, 1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
+#else
+	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(0, 0, 0), V4(0.8, 0.8, 0.8, 1));
+    push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1));
+    push_mesh(r, &game->starwars_mesh,V3(0, -1, -5), V3(2, 2, 2));
+    push_mesh(r, &game->african_head_mesh, V3(-2, 1, -5));
+	push_cube(r, r->light_p, V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, 1), V3(.1, .1, .1), V4(1, 1, 1, 1), 0, 0);
+#endif
+
 
 
     push_box_outline(r, V3(0, 4, 0), V3(1, 1, 1));
