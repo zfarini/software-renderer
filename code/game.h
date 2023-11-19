@@ -49,7 +49,7 @@ typedef int b32;
 
 #define CACHE_LINE_SIZE 64
 
-#define THREADS 1
+#define THREADS 0
 #ifdef __APPLE__
 #define CORE_COUNT (4)
 #else

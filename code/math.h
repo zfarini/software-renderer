@@ -43,7 +43,6 @@ typedef struct
 
 internal float max(float a, float b)
 {
-   // return fmax(a, b);
 	return a > b ? a : b;
 }
 

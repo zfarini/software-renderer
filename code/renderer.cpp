@@ -848,6 +848,8 @@ void render_tile(Render_Context *r, int tile_index)
 	v3 light_p = world_to_camera(r, r->light_p);
 
 
+    int save = 0;
+    int total = 0;
 	for (int j = 0; j < r->triangles_per_tile_count[tile_index]; j++)
 	{
 		Triangle *t = &r->triangles[r->triangles_per_tile[tile_index][j]];
@@ -923,35 +925,139 @@ void render_tile(Render_Context *r, int tile_index)
 	    int render_zbuffer = r->game->render_zbuffer && !(t->flags & TriangleFlags_2D);
         int render_normals = r->game->show_normals && !(t->flags & TriangleFlags_2D);
 #if 1
+        total += (max_x - min_x) * (max_y - min_y) * SAMPLES_PER_PIXEL;
     	for (int y = min_y; y < max_y; y++)
     	{
             int start_x = min_x;
+            int end_x = max_x;
 
             
             // p0y + t * (p1y - p0y) = y
 
-#if 0
+#if 1
+
             {
-                float x0 = FLT_MAX, x1 = FLT_MAX, x2 = FLT_MAX;
+                float x0 = FLT_MAX;
+                float x1 = FLT_MIN;
 
+                if (p0.y >= y && p0.y <= y + 1)
+                {
+                    x0 = min(x0, p0.x);
+                    x1 = max(x1, p0.x);
+                }
+                if (p1.y >= y && p1.y <= y + 1)
+                {
+                    x0 = min(x0, p1.x);
+                    x1 = max(x1, p1.x);
+                }
+                if (p2.y >= y && p2.y <= y + 1)
+                {
+                    x0 = min(x0, p2.x);
+                    x1 = max(x1, p2.x);
+                }
 
-                float Y = y + 0.5f;
+                const float t0 = (p1.x - p0.x) / (p1.y - p0.y);
+                const float t1 = (p2.x - p1.x) / (p2.y - p1.y);
+                const float t2 = (p2.x - p0.x) / (p2.y - p0.y);
 
-                if ((p0.y < Y) != (p1.y < Y))
-                    x0 = p0.x + ((Y - p0.y) / (p1.y - p0.y)) * (p1.x - p0.x);
-                if ((p1.y < Y) != (p2.y < Y))
-                    x1 = p1.x + ((Y - p1.y) / (p2.y - p1.y)) * (p2.x - p1.x);
-                if ((p0.y < Y) != (p2.y < Y))
-                    x2 = p0.x + ((Y - p0.y) / (p2.y - p0.y)) * (p2.x - p0.x);
-                start_x = max(start_x, (int)fminf(x0, fminf(x1, x2)));
+                if (p0.y < y != p1.y < y)
+                {
+                    float x = p0.x + t0 * (y - p0.y);
+                    x0 = min(x0, x);
+                    x1 = max(x1, x);
+                }
+                if (p0.y < y + 1 != p1.y < y + 1)
+                {
+                    float x = p0.x + t0 * (y + 1 - p0.y);
+                    x0 = min(x0, x);
+                    x1 = max(x1, x);
+                }
+                if (p1.y < y != p2.y < y)
+                {
+                    float x = p1.x + t1 * (y - p1.y);
+                    x0 = min(x0, x);
+                    x1 = max(x1, x);
+                }
+                if (p1.y < y + 1 != p2.y < y + 1)
+                {
+                    float x = p1.x + t1 * (y + 1 - p1.y);
+                    x0 = min(x0, x);
+                    x1 = max(x1, x);
+                }
+                if (p0.y < y != p2.y < y)
+                {
+                    float x = p0.x + t2 * (y - p0.y);
+                    x0 = min(x0, x);
+                    x1 = max(x1, x);
+                }
+                if (p0.y < y + 1 != p2.y < y + 1)
+                {
+                    float x = p0.x + t2 * (y + 1 - p0.y);
+                    x0 = min(x0, x);
+                    x1 = max(x1, x);
+                }
+
+                start_x = max(start_x, (int)x0);
+                end_x = min(end_x, (int)(x1 + 1));
+
+                save += min((start_x - min_x + (max_x - end_x)), max_x - min_x) * SAMPLES_PER_PIXEL;
             }
+#endif
+
+#if 0
+
+
+            for (int x = start_x; x < max_x; x++)
+            {
+                for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
+                {
+
+                    int samples_per_dim = SAMPLES_PER_PIXEL_DIM;
+			v2 offset = V2((sample % samples_per_dim) * (1.f / samples_per_dim) + 1.f / (samples_per_dim * 2),
+						(sample / samples_per_dim) * (1.f / samples_per_dim) + 1.f / (samples_per_dim * 2));
+                    v2 pixel_p = V2(x , y) + offset - p0.xy;
+
+                    f32 w1 = det * (pixel_p.x * v.y    + pixel_p.y * (-v.x));
+                    f32 w2 = det * (pixel_p.x * (-u.y) + pixel_p.y * u.x);
+                    f32 w0 = 1 - (w1 + w2);
+
+                    if (w0 < 0 || w1 < 0 || w2 < 0)
+                        continue ;
+                    int buffer_index = y * r->buffer_aa.width + x * SAMPLES_PER_PIXEL + sample;
+                    f32 z = 1.f / (w0 * p0.z + w1 * p1.z + w2 * p2.z);
+
+                    if (t->flags & TriangleFlags_2D)
+                        z = -1;
+                    else if (z > r->zbuffer[buffer_index])
+                        continue ;
+                    r->zbuffer[buffer_index] = z;
+
+                    if (!(t->flags & TriangleFlags_2D))
+				    {
+				    	w0 *= z * p0.z;
+				    	w1 *= z * p1.z;
+				    	w2 *= z * p2.z;
+				    }
+                    v3 tex_color = V3(1, 1, 1);
+                    if (t->texture)
+                    {
+                        v2 uv = uv0 * w0 + uv1 * w1 + uv2 * w2;
+                        uv.x -= floorf(uv.x);
+                        uv.y -= floorf(uv.y);
+                        int tx = min(uv.x * t->texture->width, t->texture->width - 1);
+                        int ty = min(uv.y * t->texture->height, t->texture->height - 1);
+                        tex_color = color_u32_to_v3(*(t->texture->pixels + ty * t->texture->width + tx));
+                    }
+                    *(r->buffer_aa.pixels + buffer_index) = color_v3_to_u32(t->color.rgb * tex_color);
+                }
+            }
+            continue ;
 #endif
 
             // p0 p1 p2
             //
             
-
-            int count = (max_x - start_x) * SAMPLES_PER_PIXEL;
+            int count = (end_x - start_x) * SAMPLES_PER_PIXEL;
             for (int ix = 0; ix < count; ix += LANE_WIDTH)
     	    {
                 u32_8x lane_ix = LaneU32(0, 1, 2, 3, 4, 5, 6, 7) + LaneU32(ix);
@@ -986,7 +1092,7 @@ void render_tile(Render_Context *r, int tile_index)
 #if SAMPLES_PER_PIXEL == 4
                 if (ix + LANE_WIDTH > count)
                 {
-                    //assert(ix + LANE_WIDTH - count == 4);
+                   // assert(ix + LANE_WIDTH - count == 4);
                     mask = mask & LaneU32(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0, 0, 0);
                 }
 #else
@@ -1010,7 +1116,7 @@ void render_tile(Render_Context *r, int tile_index)
                 f32_8x one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
                 f32_8x z = LaneF32(1) / one_over_z;
 
-                int buffer_index = y * r->buffer_aa.width + (min_x * SAMPLES_PER_PIXEL + ix);
+                int buffer_index = y * r->buffer_aa.width + (start_x * SAMPLES_PER_PIXEL + ix);
 				
 				if (t->flags & TriangleFlags_2D)
 					z = LaneF32(-1);
@@ -1022,7 +1128,6 @@ void render_tile(Render_Context *r, int tile_index)
                		if (_mm256_testz_si256(mask.v, mask.v))
                			continue ;
 				}
-
 #if 1
 				if (render_zbuffer)
 				{
@@ -1374,6 +1479,7 @@ void render_tile(Render_Context *r, int tile_index)
  
 #endif
 	}
+    printf("saved %d pixels out of %d\n", save, total);
 	{
 		TIMED_BLOCK("samples to pixels");
 		for (int y = clip_min_y; y < clip_max_y; y++)

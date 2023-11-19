@@ -9,6 +9,7 @@ void swap(T &a, T &b)
 	b = temp;
 }
 
+
 char *read_entire_file(Arena *arena, const char *filename)
 {
     FILE *f = fopen(filename, "rb");

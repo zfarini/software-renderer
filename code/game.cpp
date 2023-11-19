@@ -279,7 +279,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		game->camera_p = (v3){0, 0, 0};
 
 		game->render_context = push_struct(&game->renderer_arena, Render_Context);
-		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 1.f, 100, 90, 200000);
+		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 0.1f, 100, 90, 200000);
 
 		{
 			stbtt_fontinfo info;
@@ -614,7 +614,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		push_2d_text(r, V2(0, 0), "hit count: %d", game->hit_count);
 	}
 #endif
-    push_2d_triangle(r, V2(0.2, 0.1), V2(0.5, 0.2), V2(0, 0.5));
+ //   push_2d_triangle(r, V2(0.2, 0.1), V2(0.5, 0.2), V2(0, 0.5));
     update_profiler_stats(game);
     draw_profiler(game, game_input, r, V2(0, 0), V2(0.7, game->last_profiler_height));
 
