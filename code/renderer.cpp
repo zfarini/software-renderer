@@ -854,7 +854,7 @@ void render_tile(Render_Context *r, int tile_index)
 	{
 		Triangle *t = &r->triangles[r->triangles_per_tile[tile_index][j]];
 
-#if 2
+#if 1
         v3 tp0 = world_to_camera(r, t->p0);
         v3 tp1 = world_to_camera(r, t->p1);
         v3 tp2 = world_to_camera(r, t->p2);
@@ -925,97 +925,32 @@ void render_tile(Render_Context *r, int tile_index)
 	    int render_zbuffer = r->game->render_zbuffer && !(t->flags & TriangleFlags_2D);
         int render_normals = r->game->show_normals && !(t->flags & TriangleFlags_2D);
 
-         f32_8x X0 = LaneF32(p0.x, p1.x, p0.x, -1, -1, -1, -1, -1);
-         f32_8x Y0 = LaneF32(p0.y, p1.y, p0.y, -1, -1, -1, -1, -1);
-         f32_8x X1 = LaneF32(p1.x, p2.x, p2.x, -1, -1, -1, -1, -1);
-         f32_8x Y1 = LaneF32(p1.y, p2.y, p2.y, -1, -1, -1, -1, -1);
+         f32_8x X0 = LaneF32(p0.x, p1.x, p0.x, 0, 0, 0, 0, 0);
+         f32_8x Y0 = LaneF32(p0.y, p1.y, p0.y, 0, 0, 0, 0, 0);
+         f32_8x X1 = LaneF32(p1.x, p2.x, p2.x, 0, 0, 0, 0, 0);
+         f32_8x Y1 = LaneF32(p1.y, p2.y, p2.y, 0, 0, 0, 0, 0);
 
          f32_8x T = (X1 - X0) / (Y1 - Y0);
-#if 1
+
         //total += (max_x - min_x) * (max_y - min_y) * SAMPLES_PER_PIXEL;
     	for (int y = min_y; y < max_y; y++)
     	{
             int start_x = min_x;
             int end_x = max_x;
-
-            
-            // p0y + t * (p1y - p0y) = y
-
 #if 1
-
+            // find min/max X of triangle at this y
             {
-#if 0
-                float x0 = FLT_MAX;
-                float x1 = FLT_MIN;
-
-                if (p0.y >= y && p0.y <= y + 1)
-                {
-                    x0 = min(x0, p0.x);
-                    x1 = max(x1, p0.x);
-                }
-                if (p1.y >= y && p1.y <= y + 1)
-                {
-                    x0 = min(x0, p1.x);
-                    x1 = max(x1, p1.x);
-                }
-                if (p2.y >= y && p2.y <= y + 1)
-                {
-                    x0 = min(x0, p2.x);
-                    x1 = max(x1, p2.x);
-                }
-
-                const float t0 = (p1.x - p0.x) / (p1.y - p0.y);
-                const float t1 = (p2.x - p1.x) / (p2.y - p1.y);
-                const float t2 = (p2.x - p0.x) / (p2.y - p0.y);
-
-                if (p0.y < y != p1.y < y)
-                {
-                    float x = p0.x + t0 * (y - p0.y);
-                    x0 = min(x0, x);
-                    x1 = max(x1, x);
-                }
-                if (p0.y < y + 1 != p1.y < y + 1)
-                {
-                    float x = p0.x + t0 * (y + 1 - p0.y);
-                    x0 = min(x0, x);
-                    x1 = max(x1, x);
-                }
-                if (p1.y < y != p2.y < y)
-                {
-                    float x = p1.x + t1 * (y - p1.y);
-                    x0 = min(x0, x);
-                    x1 = max(x1, x);
-                }
-                if (p1.y < y + 1 != p2.y < y + 1)
-                {
-                    float x = p1.x + t1 * (y + 1 - p1.y);
-                    x0 = min(x0, x);
-                    x1 = max(x1, x);
-                }
-                if (p0.y < y != p2.y < y)
-                {
-                    float x = p0.x + t2 * (y - p0.y);
-                    x0 = min(x0, x);
-                    x1 = max(x1, x);
-                }
-                if (p0.y < y + 1 != p2.y < y + 1)
-                {
-                    float x = p0.x + t2 * (y + 1 - p0.y);
-                    x0 = min(x0, x);
-                    x1 = max(x1, x);
-                }
-
-                start_x = max(start_x, (int)x0);
-                end_x = min(end_x, (int)(x1 + 1));
-
-#else
                 f32_8x v0 = LaneF32(p0.y, p1.y, p2.y, -1, -1, -1, -1, -1);
                 f32_8x v1 = LaneF32(p1.y, p2.y, p0.y, -1, -1, -1, -1, -1);
 
+                // if one of the points of a side is inside the region (y, y + 1) then we take its x
                 u32_8x c = (v0 >= LaneF32(y)) & (v0 <= LaneF32(y + 1));
                 f32_8x x0 = blend(LaneF32(FLT_MAX), LaneF32(p0.x, p1.x, p2.x, 0, 0, 0, 0, 0), c);
                 f32_8x x1 = blend(LaneF32(FLT_MIN), LaneF32(p0.x, p1.x, p2.x, 0, 0, 0, 0, 0), c);
 
+                // we solve for t here:
+                // p0_y + t * (p1_y - p0_y) = y
+                // then use it to find x and repeat for the three sides
                 f32_8x sx0 = X0 + T * (LaneF32(y) - Y0);
                 f32_8x sx1 = X0 + T * (LaneF32(y + 1) - Y0);
 
@@ -1038,15 +973,11 @@ void render_tile(Render_Context *r, int tile_index)
 #endif
 
                 start_x = max(start_x, (int)x_min);
-                end_x = min(end_x, (int)(x_max + 1));
-#endif
-                //save += min((start_x - min_x + (max_x - end_x)), max_x - min_x) * SAMPLES_PER_PIXEL;
+                end_x = min(end_x, (int)(x_max + 1)); // TODO: do we need + 1 here?
             }
 #endif
 
 #if 0
-
-
             for (int x = start_x; x < max_x; x++)
             {
                 for (int sample = 0; sample < SAMPLES_PER_PIXEL; sample++)
@@ -1153,8 +1084,7 @@ void render_tile(Render_Context *r, int tile_index)
                 if (_mm256_testz_si256(mask.v, mask.v))
                     continue ;
 
-                f32_8x one_over_z = p0.z * w0 + p1.z * w1 + p2.z * w2;
-                f32_8x z = LaneF32(1) / one_over_z;
+                f32_8x z = LaneF32(_mm256_rcp_ps((p0.z * w0 + p1.z * w1 + p2.z * w2).v));
 
                 int buffer_index = y * r->buffer_aa.width + (start_x * SAMPLES_PER_PIXEL + ix);
 				
@@ -1317,8 +1247,6 @@ void render_tile(Render_Context *r, int tile_index)
                     specular *= specular;
                     specular *= specular;
 
-                    f32_8x dist = length(LaneV3(light_p) - p);
-
                     f32_8x attenuation = LaneF32(1);
                     c = ka * LaneV3(ambient) + 
                           attenuation * (
@@ -1348,176 +1276,6 @@ void render_tile(Render_Context *r, int tile_index)
                 _mm256_maskstore_ps((r->zbuffer + buffer_index), mask.v, z.v);
     	    }
 		}
-#else
-        __m256 zero_256 = _mm256_set1_ps(0);
-        __m256 one_256 = _mm256_set1_ps(1);
-        __m256i ix_offset = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0); // TODO: order?
-       // ix_offset = _mm256_set_epi32(0, 1, 2, 3, 4, 5, 6, 7)
-        __m256i min_x_256 = _mm256_set1_epi32(min_x);
-        __m256  p0_x_256 = _mm256_set1_ps(p0.x);
-        __m256  p0_y_256 = _mm256_set1_ps(p0.y);
-
-        __m256 v_y_256 = _mm256_set1_ps(v.y);
-        __m256 u_x_256 = _mm256_set1_ps(u.x);
-        __m256 neg_v_x_256 = _mm256_set1_ps(-v.x);
-        __m256 neg_u_y_256 = _mm256_set1_ps(-u.y);
-
-        __m256 det_256 = _mm256_set1_ps(det);
-
-        __m256 p0_z_256 = _mm256_set1_ps(p0.z);
-        __m256 p1_z_256 = _mm256_set1_ps(p1.z);
-        __m256 p2_z_256 = _mm256_set1_ps(p2.z);
-
-        __m256 one_over_255 = _mm256_set1_ps(1.f / 255);
-
-        
-
-        int count = (max_x - min_x) * SAMPLES_PER_PIXEL;
-        for (int y = min_y; y < max_y; y++)
-    	{
-            __m256 y_256 = _mm256_set1_ps(y);
-
-            for (int ix = 0; ix < count; ix += LANE_WIDTH)
-    	    {
-                __m256i lane_ix = _mm256_add_epi32(ix_offset, _mm256_set1_epi32(ix));
-
-                __m256i x = _mm256_add_epi32(min_x_256, _mm256_srli_epi32(lane_ix, 2));
-                __m256 x_256 = _mm256_cvtepi32_ps(x);
-
-                // TODO: I don't like this access
-                __m256 pixel_offset_x = r->samples_offset[ix % SAMPLES_PER_PIXEL].x.v;
-                __m256 pixel_offset_y = r->samples_offset[ix % SAMPLES_PER_PIXEL].y.v;
- //               pixel_offset_x = pixel_offset_y = zero_256;
-
-                __m256 pixel_p_x = _mm256_sub_ps(_mm256_add_ps(x_256, pixel_offset_x), p0_x_256);
-                __m256 pixel_p_y = _mm256_sub_ps(_mm256_add_ps(y_256, pixel_offset_y), p0_y_256);
-
-                __m256 w1 = _mm256_add_ps(_mm256_mul_ps(pixel_p_x, v_y_256), _mm256_mul_ps(pixel_p_y, neg_v_x_256));
-                __m256 w2 = _mm256_add_ps(_mm256_mul_ps(pixel_p_x, neg_u_y_256), _mm256_mul_ps(pixel_p_y, u_x_256));
-
-                w1 = _mm256_mul_ps(w1, det_256);
-                w2 = _mm256_mul_ps(w2, det_256);
-
-                __m256 w0 = _mm256_sub_ps(one_256, _mm256_add_ps(w1, w2));
-
-                __m256i mask;
-
-                mask = _mm256_castps_si256(_mm256_cmp_ps(w0, zero_256, _CMP_GT_OS));
-                mask = _mm256_and_si256(mask, _mm256_castps_si256(_mm256_cmp_ps(w1, zero_256, _CMP_GT_OS)));
-                mask = _mm256_and_si256(mask, _mm256_castps_si256(_mm256_cmp_ps(w2, zero_256, _CMP_GT_OS)));
-
-#if 0
-                if (ix + LANE_WIDTH > count)
-                {
-                    alignas(32) uint32_t value[LANE_WIDTH] = {};
-
-                    int left = ix + LANE_WIDTH - count;
-
-                    for (int j = 0; j < left; j++)
-                        value[LANE_WIDTH - j - 1] = 0xFFFFFFFF;
-
-                    __m256i blend =  _mm256_load_si256((__m256i *)value);
-                    mask = _mm256_blendv_epi8(mask, _mm256_set1_epi32(0), blend);
-                }
-#endif
-                if (_mm256_testz_si256(mask, mask))
-                    continue ;
-
-                __m256 w0_p = _mm256_mul_ps(p0_z_256, w0);
-                __m256 w1_p = _mm256_mul_ps(p1_z_256, w1);
-                __m256 w2_p = _mm256_mul_ps(p2_z_256, w2);
-                __m256 z = _mm256_rcp_ps(_mm256_add_ps(w0_p, _mm256_add_ps(w1_p, w2_p)));
-
-                int buffer_index = y * r->buffer_aa.width + (min_x * SAMPLES_PER_PIXEL + ix);
-
-                if (t->is_2d)
-                    z = _mm256_set1_ps(-1);
-                else
-                {
-                	__m256 zbuf = _mm256_maskload_ps(r->zbuffer + buffer_index, mask);
-
-                	mask = _mm256_and_si256(mask, _mm256_castps_si256(_mm256_cmp_ps(z, zbuf, _CMP_LT_OS)));
-
-                	if (_mm256_testz_si256(mask, mask))
-                		continue ;
-
-                    w0 = _mm256_mul_ps(z, w0_p);
-                    w1 = _mm256_mul_ps(z, w1_p);
-                    w2 = _mm256_mul_ps(z, w2_p);
-                }
-
-                __m256 tex_r = one_256, tex_g = one_256, tex_b = one_256;
-                __m256 alpha = _mm256_set1_ps(t->color.a);
-
-				if (t->texture)
-                {
-                    __m256 u = _mm256_add_ps(_mm256_mul_ps(w0, _mm256_set1_ps(uv0.x)),
-                                    _mm256_add_ps(_mm256_mul_ps(w1, _mm256_set1_ps(uv1.x)),
-                                    _mm256_mul_ps(w2, _mm256_set1_ps(uv2.x))));
-                    __m256 v = _mm256_add_ps(_mm256_mul_ps(w0, _mm256_set1_ps(uv0.y)),
-                                    _mm256_add_ps(_mm256_mul_ps(w1, _mm256_set1_ps(uv1.y)),
-                                    _mm256_mul_ps(w2, _mm256_set1_ps(uv2.y))));
-
-                    u = _mm256_sub_ps(u, _mm256_floor_ps(u));
-                    v = _mm256_sub_ps(v, _mm256_floor_ps(v));
-
-                    __m256i tx = _mm256_cvttps_epi32(_mm256_mul_ps(u, _mm256_set1_ps(t->texture->width)));
-                    __m256i ty = _mm256_cvttps_epi32(_mm256_mul_ps(v, _mm256_set1_ps(t->texture->height)));
-
-                    tx = _mm256_min_epi32(tx, _mm256_set1_epi32(t->texture->width - 1));
-                    ty = _mm256_min_epi32(ty, _mm256_set1_epi32(t->texture->height - 1));
-                    __m256i idx = _mm256_add_epi32(_mm256_mullo_epi32(ty, _mm256_set1_epi32(t->texture->width)), tx);
-
-                    __m256i color32 = _mm256_mask_i32gather_epi32(_mm256_set1_epi32(0),
-							(int *)t->texture->pixels, idx, mask, sizeof(uint32_t));
-                    tex_r = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(color32, 24), _mm256_set1_epi32(0xFF))), one_over_255);
-                    tex_g = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(color32, 16), _mm256_set1_epi32(0xFF))), one_over_255);
-                    tex_b = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(color32,  8), _mm256_set1_epi32(0xFF))), one_over_255);
-
-                    alpha = _mm256_mul_ps(alpha, _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(color32, _mm256_set1_epi32(0xFF))), one_over_255));
-                }
-
-                __m256 red, green, blue;
-
-      //          if (t->no_lighthing)
-                {
-                    red = _mm256_mul_ps(tex_r, _mm256_set1_ps(t->color.r));
-                    green = _mm256_mul_ps(tex_g, _mm256_set1_ps(t->color.g));
-                    blue = _mm256_mul_ps(tex_b, _mm256_set1_ps(t->color.b));
-
-                }
-                {
-                    __m256i old_color32 = _mm256_maskload_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask);
-
-                    __m256 old_r = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(old_color32, 24), _mm256_set1_epi32(0xFF))), one_over_255);
-                    __m256 old_g = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(old_color32, 24), _mm256_set1_epi32(0xFF))), one_over_255);
-                    __m256 old_b = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srli_epi32(old_color32, 24), _mm256_set1_epi32(0xFF))), one_over_255);
-
-                    red = _mm256_add_ps(old_r, _mm256_mul_ps(alpha, _mm256_sub_ps(red, old_r)));
-                    green = _mm256_add_ps(old_g, _mm256_mul_ps(alpha, _mm256_sub_ps(green, old_g)));
-                    blue = _mm256_add_ps(old_b, _mm256_mul_ps(alpha, _mm256_sub_ps(blue, old_b)));
-                }
-
-
-                red = _mm256_min_ps(red, one_256);
-                green = _mm256_min_ps(green, one_256);
-                blue = _mm256_min_ps(blue, one_256);
-
-                red = _mm256_add_ps(_mm256_mul_ps(red, _mm256_set1_ps(255)), _mm256_set1_ps(0.5f));
-                green = _mm256_add_ps(_mm256_mul_ps(green, _mm256_set1_ps(255)), _mm256_set1_ps(0.5f));
-                blue = _mm256_add_ps(_mm256_mul_ps(blue, _mm256_set1_ps(255)), _mm256_set1_ps(0.5f));
-
-                __m256i color32 = _mm256_slli_epi32(_mm256_cvttps_epi32(red), 24);
-
-                color32 = _mm256_or_si256(color32, _mm256_slli_epi32(_mm256_cvttps_epi32(green), 16));
-                color32 = _mm256_or_si256(color32, _mm256_slli_epi32(_mm256_cvttps_epi32(blue), 8));
-
-            	_mm256_maskstore_epi32((int *)(r->buffer_aa.pixels + buffer_index), mask, color32);
-               	_mm256_maskstore_ps((r->zbuffer + buffer_index), mask, z);
-            }
-        }
- 
-#endif
 	}
  //   printf("saved %d pixels out of %d\n", save, total);
 	{
@@ -1599,6 +1357,8 @@ void end_render(Render_Context *r)
 {
 	for (int i = 0; i < r->triangle_2d_count; i++)
 		push_triangle(r, &r->triangles_2d[i]);
+	struct timespec time_start, time_end;
+	clock_gettime(CLOCK_MONOTONIC, &time_start);
 #if THREADS
 	__sync_synchronize();
     r->game->tiles_finished = 0;
@@ -1628,6 +1388,8 @@ void end_render(Render_Context *r)
 	for (int i = 0; i < TILES_COUNT; i++)
 		render_tile(r, i);
 #endif
+	clock_gettime(CLOCK_MONOTONIC, &time_end);
+    printf("render time: %f\n",  (time_end.tv_sec - time_start.tv_sec) * 1000.0 + (time_end.tv_nsec - time_start.tv_nsec) / 1000000.0);
 }
 
 void	push_2d_rect(Render_Context *r, v2 min, v2 max, v4 color = V4(1, 1, 1, 1))

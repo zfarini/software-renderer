@@ -463,7 +463,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.3, 0.3, 0.3), light_p);
 
-#if 0
+#if 1
 	{
 		f32 d = 10;
 		{
@@ -533,7 +533,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 	//}
 
 
-#if 1
+#if 0
     int cubes_width = 100;
     int cubes_depth = 100;
 

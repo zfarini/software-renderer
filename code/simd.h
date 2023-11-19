@@ -678,14 +678,13 @@ internal float _mm_hsum_ps(__m128 v) {
     return        _mm_cvtss_f32(v);
 }
 
-internal
-float get128_avx(__m128i a, int idx){
+internal float get128_avx(__m128i a, int idx){
     __m128i vidx = _mm_cvtsi32_si128(idx);          // vmovd
     __m128  shuffled = _mm_permutevar_ps(a, vidx);  // vpermilps
     return _mm_cvtss_f32(shuffled);
 }
 
-inline float horizontal_min( __m256 v )
+internal float horizontal_min( __m256 v )
 {
     __m128 i = _mm256_extractf128_ps( v, 1 );
     i = _mm_min_ps( i, _mm256_castps256_ps128( v ) );
@@ -694,7 +693,7 @@ inline float horizontal_min( __m256 v )
     return _mm_cvtss_f32( i );
 }
 
-inline float horizontal_max( __m256 v )
+internal float horizontal_max( __m256 v )
 {
     __m128 i = _mm256_extractf128_ps( v, 1 );
     i = _mm_max_ps( i, _mm256_castps256_ps128( v ) );
