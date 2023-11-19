@@ -196,8 +196,8 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 		v3 n = cross(triangles[0].p1 - triangles[0].p0, triangles[0].p2 - triangles[0].p0);
 
 		// TODO: why does this work
-	//	if (!(triangle->flags & TriangleFlags_NoBackFaceCulling) && dot(n, triangles[0].p0) > 0)
-	//		return ;
+		if (!(triangle->flags & TriangleFlags_NoBackFaceCulling) && dot(n, triangles[0].p0) > 0)
+			return ;
 		for (int i = 0; i < ARRAY_LENGTH(r->clip_planes) && triangle_count; i++)
 		{
 			int new_triangle_count = 0;
@@ -924,8 +924,15 @@ void render_tile(Render_Context *r, int tile_index)
 
 	    int render_zbuffer = r->game->render_zbuffer && !(t->flags & TriangleFlags_2D);
         int render_normals = r->game->show_normals && !(t->flags & TriangleFlags_2D);
+
+         f32_8x X0 = LaneF32(p0.x, p1.x, p0.x, -1, -1, -1, -1, -1);
+         f32_8x Y0 = LaneF32(p0.y, p1.y, p0.y, -1, -1, -1, -1, -1);
+         f32_8x X1 = LaneF32(p1.x, p2.x, p2.x, -1, -1, -1, -1, -1);
+         f32_8x Y1 = LaneF32(p1.y, p2.y, p2.y, -1, -1, -1, -1, -1);
+
+         f32_8x T = (X1 - X0) / (Y1 - Y0);
 #if 1
-        total += (max_x - min_x) * (max_y - min_y) * SAMPLES_PER_PIXEL;
+        //total += (max_x - min_x) * (max_y - min_y) * SAMPLES_PER_PIXEL;
     	for (int y = min_y; y < max_y; y++)
     	{
             int start_x = min_x;
@@ -937,6 +944,7 @@ void render_tile(Render_Context *r, int tile_index)
 #if 1
 
             {
+#if 0
                 float x0 = FLT_MAX;
                 float x1 = FLT_MIN;
 
@@ -1000,7 +1008,39 @@ void render_tile(Render_Context *r, int tile_index)
                 start_x = max(start_x, (int)x0);
                 end_x = min(end_x, (int)(x1 + 1));
 
-                save += min((start_x - min_x + (max_x - end_x)), max_x - min_x) * SAMPLES_PER_PIXEL;
+#else
+                f32_8x v0 = LaneF32(p0.y, p1.y, p2.y, -1, -1, -1, -1, -1);
+                f32_8x v1 = LaneF32(p1.y, p2.y, p0.y, -1, -1, -1, -1, -1);
+
+                u32_8x c = (v0 >= LaneF32(y)) & (v0 <= LaneF32(y + 1));
+                f32_8x x0 = blend(LaneF32(FLT_MAX), LaneF32(p0.x, p1.x, p2.x, 0, 0, 0, 0, 0), c);
+                f32_8x x1 = blend(LaneF32(FLT_MIN), LaneF32(p0.x, p1.x, p2.x, 0, 0, 0, 0, 0), c);
+
+                f32_8x sx0 = X0 + T * (LaneF32(y) - Y0);
+                f32_8x sx1 = X0 + T * (LaneF32(y + 1) - Y0);
+
+                u32_8x c0 = (v0 < LaneF32(y)) ^ (v1 < LaneF32(y));
+                u32_8x c1 = (v0 < LaneF32(y + 1)) ^ (v1 < LaneF32(y + 1));
+                x0 = blend(x0, sx0, c0 & (sx0 < x0));
+                x1 = blend(x1, sx0, c0 & (sx0 > x1));
+                x0 = blend(x0, sx1, c1 & (sx1 < x0));
+                x1 = blend(x1, sx1, c1 & (sx1 > x1));
+#if 0
+                float x_min = horizontal_min(x0.v);
+                float x_max = horizontal_max(x1.v);
+#else
+                alignas(32) float v[8];
+
+                _mm256_store_ps(v, x0.v);
+                float x_min = min(v[5], min(v[6], v[7]));
+                _mm256_store_ps(v, x1.v);
+                float x_max = max(v[5], max(v[6], v[7]));
+#endif
+
+                start_x = max(start_x, (int)x_min);
+                end_x = min(end_x, (int)(x_max + 1));
+#endif
+                //save += min((start_x - min_x + (max_x - end_x)), max_x - min_x) * SAMPLES_PER_PIXEL;
             }
 #endif
 
@@ -1479,7 +1519,7 @@ void render_tile(Render_Context *r, int tile_index)
  
 #endif
 	}
-    printf("saved %d pixels out of %d\n", save, total);
+ //   printf("saved %d pixels out of %d\n", save, total);
 	{
 		TIMED_BLOCK("samples to pixels");
 		for (int y = clip_min_y; y < clip_max_y; y++)

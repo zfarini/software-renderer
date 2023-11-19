@@ -279,7 +279,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		game->camera_p = (v3){0, 0, 0};
 
 		game->render_context = push_struct(&game->renderer_arena, Render_Context);
-		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 0.1f, 100, 90, 200000);
+		*game->render_context = new_render_context(&game->renderer_arena, game, game->framebuffer, 1, 100, 90, 200000);
 
 		{
 			stbtt_fontinfo info;
@@ -463,7 +463,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 
 	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.3, 0.3, 0.3), light_p);
 
-#if 1
+#if 0
 	{
 		f32 d = 10;
 		{
@@ -533,6 +533,23 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 	//}
 
 
+#if 1
+    int cubes_width = 100;
+    int cubes_depth = 100;
+
+    for (int x = -cubes_width / 2; x < cubes_width / 2; x++)
+    {
+        for (int z = -cubes_depth / 2; z < cubes_depth / 2; z++)
+        {
+            float y = game->cubes_p[((x + cubes_width / 2) * cubes_depth + (z + cubes_depth / 2)) % ARRAY_LENGTH(game->cubes_p)].y / 10;
+
+            y -= 3;
+
+            push_cube(r, V3(x, y, z), V3(1));
+        }
+    }
+#endif
+
 #if 0
 	{
 		v3 player_radius = V3(.3);
@@ -543,11 +560,10 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			game->player_p = V3(0, 0, game->camera_p.z - 3);
 		}
 		v3 ddP = {};
-		if (game_input->buttons[SDL_SCANCODE_K].is_down)
+		if (game_input->buttons[SDL_SCANCODE_LEFT].is_down)
 			ddP.x -= 1;
-		if (game_input->buttons[SDL_SCANCODE_L].is_down)
+		if (game_input->buttons[SDL_SCANCODE_RIGHT].is_down)
 			ddP.x += 1;
-
 
 		float ddangle = -ddP.x * 5 - game->player_z_dangle * 5 - game->player_z_angle * 10;
 

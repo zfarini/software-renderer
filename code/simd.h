@@ -123,6 +123,14 @@ internal u32_8x operator|(u32_8x a, u32_8x b)
     return res;
 }
 
+internal u32_8x operator^(u32_8x a, u32_8x b)
+{
+    u32_8x res;
+
+    res.v = _mm256_xor_si256(a.v, b.v);
+    return res;
+}
+
 internal u32_8x operator<<(u32_8x a, int shift)
 {
     u32_8x res;
@@ -213,6 +221,14 @@ internal f32_8x LaneF32(__m256 x)
     f32_8x res;
 
     res.v = x;
+    return res;
+}
+
+internal f32_8x LaneF32(float x7, float x6, float x5, float x4, float x3, float x2, float x1, float x0)
+{
+    f32_8x res;
+
+    res.v = _mm256_set_ps(x7, x6, x5, x4, x3, x2, x1, x0);
     return res;
 }
 
@@ -366,7 +382,7 @@ internal f32_8x blend(f32_8x a, f32_8x b, u32_8x mask)
 {
 	f32_8x res;
 
-	res.v = _mm256_blendv_ps(a.v, b.v, _mm256_cvtepi32_ps(mask.v));
+	res.v = _mm256_blendv_ps(a.v, b.v, _mm256_castsi256_ps(mask.v));
 	return res;
 }
 
@@ -656,17 +672,63 @@ internal v3_8x lerp(v3_8x a, f32_8x t, v3_8x b)
 	return res;
 }
 
-float _mm_hsum_ps(__m128 v) {
+internal float _mm_hsum_ps(__m128 v) {
 	v = _mm_hadd_ps(v, v);
 	v = _mm_hadd_ps(v, v);
     return        _mm_cvtss_f32(v);
 }
 
-static inline
+internal
 float get128_avx(__m128i a, int idx){
     __m128i vidx = _mm_cvtsi32_si128(idx);          // vmovd
     __m128  shuffled = _mm_permutevar_ps(a, vidx);  // vpermilps
     return _mm_cvtss_f32(shuffled);
 }
+
+inline float horizontal_min( __m256 v )
+{
+    __m128 i = _mm256_extractf128_ps( v, 1 );
+    i = _mm_min_ps( i, _mm256_castps256_ps128( v ) );
+    i = _mm_min_ps( i, _mm_movehl_ps( i, i ) );
+    i = _mm_min_ss( i, _mm_movehdup_ps( i ) );
+    return _mm_cvtss_f32( i );
+}
+
+inline float horizontal_max( __m256 v )
+{
+    __m128 i = _mm256_extractf128_ps( v, 1 );
+    i = _mm_max_ps( i, _mm256_castps256_ps128( v ) );
+    i = _mm_max_ps( i, _mm_movehl_ps( i, i ) );
+    i = _mm_max_ss( i, _mm_movehdup_ps( i ) );
+    return _mm_cvtss_f32( i );
+}
+
+#if 0
+intenral float horizontal_min_avx(__m256 v) {
+    __m256 permute1 = _mm256_permute2f128_ps(v, v, 0x01); // Permute the high and low 128-bit lanes
+    __m256 min1 = _mm256_min_ps(v, permute1); // Compute minimum within the two 128-bit halves
+    
+    __m256 permute2 = _mm256_permute_ps(min1, _MM_SHUFFLE(1, 0, 3, 2)); // Shuffle for cross-lane comparison
+    __m256 min2 = _mm256_min_ps(min1, permute2); // Minimum across lanes
+    
+    __m256 permute3 = _mm256_permute2f128_ps(min2, min2, 0x01); // Permute high and low 128-bit lanes
+    __m256 min3 = _mm256_min_ps(min2, permute3); // Final minimum across all elements
+    
+    return _mm256_cvtss_f32(_mm256_castps256_ps128(min3)); // Extract the final minimum value
+}
+
+internal float horizontal_max_avx(__m256 v) {
+    __m256 permute1 = _mm256_permute2f128_ps(v, v, 0x01); // Permute the high and low 128-bit lanes
+    __m256 min1 = _mm256_max_ps(v, permute1); // Compute minimum within the two 128-bit halves
+    
+    __m256 permute2 = _mm256_permute_ps(min1, _MM_SHUFFLE(1, 0, 3, 2)); // Shuffle for cross-lane comparison
+    __m256 min2 = _mm256_max_ps(min1, permute2); // Minimum across lanes
+    
+    __m256 permute3 = _mm256_permute2f128_ps(min2, min2, 0x01); // Permute high and low 128-bit lanes
+    __m256 min3 = _mm256_max_ps(min2, permute3); // Final minimum across all elements
+    
+    return _mm256_cvtss_f32(_mm256_castps256_ps128(min3)); // Extract the final minimum value
+}
+#endif
 
 #endif
