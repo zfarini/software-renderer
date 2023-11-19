@@ -396,6 +396,11 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			game->cubes_p[i] = V3(x, y, -z);
 			game->cubes_radius[i] = V3(.5, .5, .5);
 		}
+        for (int x = 0; x < GROUND_WIDTH; x++)
+        {
+            for (int z = 0; z < GROUND_DEPTH; z++)
+                game->ground_height[x][z] = random_float(0, 1);
+        }
     }
 	struct timespec time_start, time_end;
 	clock_gettime(CLOCK_MONOTONIC, &time_start);
@@ -464,6 +469,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 	begin_render(r, game->camera_p, game->camera_rotation_mat,  V3(0.3, 0.3, 0.3), light_p);
 
 #if 1
+#if 0
 	{
 		f32 d = 10;
 		{
@@ -496,6 +502,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 			push_triangle(r, &t);
 		}
 	}
+#endif
 #if 0
 	push_mesh(r, &game->monkey_mesh, V3(-1, 1, -3), V3(1, 1, 1), V3(game->time * 2, 0, 0), V4(0.8, 0.8, 0.8, 1));
     push_mesh(r, &game->cow_mesh, V3(1, 1.5, -5), V3(1, 1, 1), V3(game->time, game->time, game->time));
@@ -549,6 +556,33 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
         }
     }
 #endif
+
+      for (int x = 0; x < GROUND_WIDTH; x++)
+      {
+          for (int z = 0; z < GROUND_DEPTH - 1; z++)
+          {
+              
+              f32 dx = 1.4;
+              f32 dz = 1.7;
+
+              f32 y = -1.5;
+              f32 dy = 1;
+
+              v3 p00 = V3(x - GROUND_WIDTH * .5, game->ground_height[x][z] * dy + y, z - GROUND_DEPTH * .5);
+
+              p00.z *= dz;
+              p00.x *= dx;
+              
+              v3 p01 = V3(p00.x + dx, game->ground_height[x + 1][z] * dy + y, p00.z);
+              v3 p10 = V3(p00.x, game->ground_height[x][z + 1] * dy + y, p00.z + dz);
+              v3 p11 = V3(p00.x + dx, game->ground_height[x + 1][z + 1] * dy + y, p00.z + dz);
+
+              push_triangle(r, p00, p01, p11, V4(1), TriangleFlags_NoBackFaceCulling, &game->checkerboard_tex, V2(0, 0), V2(1, 0), V2(1, 1));
+              push_triangle(r, p00, p11, p10, V4(1), TriangleFlags_NoBackFaceCulling, &game->checkerboard_tex, V2(0, 0), V2(1, 1), V2(0, 1));
+              //push_triangle_outline(r, p00, p01, p11);
+              //push_triangle_outline(r, p00, p11, p10);
+          }
+      }
 
 #if 0
 	{
@@ -630,6 +664,7 @@ extern "C" void game_update_and_render(Game *game, GameMemory *game_memory, Game
 		push_2d_text(r, V2(0, 0), "hit count: %d", game->hit_count);
 	}
 #endif
+
  //   push_2d_triangle(r, V2(0.2, 0.1), V2(0.5, 0.2), V2(0, 0.5));
     update_profiler_stats(game);
     draw_profiler(game, game_input, r, V2(0, 0), V2(0.7, game->last_profiler_height));

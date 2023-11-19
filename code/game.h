@@ -348,6 +348,10 @@ typedef struct
 	int hit[1000];
 	int hit_count;
 
+#define GROUND_WIDTH 100
+#define GROUND_DEPTH 100
+    float ground_height[GROUND_WIDTH][GROUND_DEPTH];
+
 } Game;
 
 

@@ -381,7 +381,33 @@ void push_triangle(Render_Context *r, Triangle *triangle)
 
 void push_line(Render_Context *r, v3 p0, v3 p1, v4 color);
 
-void push_cube(Render_Context *r, v3 c, v3 radius, v4 color = V4(1, 1, 1, 1), v3 u = V3(1, 0, 0), v3 v = V3(0, 1, 0), v3 w = V3(0, 0, 1))
+void push_triangle(Render_Context *r, v3 p0, v3 p1, v3 p2, v4 color = V4(1), int flags = 0,
+            Texture *texture = 0, v2 uv0 = V2(1, 0), v2 uv1 = V2(0, 1), v2 uv2 = V2(1, 1))
+{
+    Triangle t;
+
+    t.p0 = p0;
+    t.p1 = p1;
+    t.p2 = p2;
+    t.color = color;
+    t.flags = flags;
+    v3 normal = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
+    t.n0 = t.n1 = t.n2 = normal;
+    t.texture = texture;
+    t.uv0 = uv0;
+    t.uv1 = uv1;
+    t.uv2 = uv2;
+    push_triangle(r, &t);
+}
+
+void push_triangle_outline(Render_Context *r, v3 p0, v3 p1, v3 p2, v4 color = V4(1))
+{
+    push_line(r, p0, p1, color);
+    push_line(r, p0, p2, color);
+    push_line(r, p1, p2, color);
+}
+
+void push_cube(Render_Context *r, v3 c, v3 radius, v4 color = V4(1), v3 u = V3(1, 0, 0), v3 v = V3(0, 1, 0), v3 w = V3(0, 0, 1))
 {
     u = noz(u) * radius.x;
     v = noz(v) * radius.y;
@@ -421,29 +447,8 @@ void push_cube(Render_Context *r, v3 c, v3 radius, v4 color = V4(1, 1, 1, 1), v3
 		if (triangles[i].flip_uv)
 			swap(uv1, uv2);
 
-        Triangle t = {};
-
-        t.p0 = triangles[i].p0;
-        t.p1 = triangles[i].p1;
-        t.p2 = triangles[i].p2;
-        t.uv0 = uv0;
-        t.uv1 = uv1;
-        t.uv2 = uv2;
-
-        v3 normal = noz(cross(t.p1 - t.p0, t.p2 - t.p0));
-        t.n0 = normal;
-        t.n1 = normal;
-        t.n2 = normal;
-
-        t.color = color;
-
-        push_triangle(r,  &t);
-
-		//normal *= -1;
-		//v4 nc = V4((normal + V3(1, 1, 1)) * 0.5f, 1);
-		//v3 c = (t.p0 + t.p1 + t.p2) / 3;
-		//push_line(r, c, c + normal * 0.1f, nc);
-	}
+        push_triangle(r, triangles[i].p0, triangles[i].p1, triangles[i].p2, color);
+    }
 
 }
 
@@ -872,9 +877,9 @@ void render_tile(Render_Context *r, int tile_index)
 
 		if (t->flags & TriangleFlags_2D)
 		{
-			p0 = tp0;
-			p1 = tp1;
-			p2 = tp2;
+			p0 = t->p0;
+			p1 = t->p1;
+			p2 = t->p2;
 		}
 		else
 		{
